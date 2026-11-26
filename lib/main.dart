@@ -183,7 +183,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                 arquivosLogo[id] = nomeArquivo;
                 ordemCatalogo[id] = i;
                 final anoRaw = item['ano'] ?? item['year'] ?? item['releaseYear'] ?? item['releaseDate'];
-                final anoMatch = RegExp(r'(?:19|20)\\d{2}').firstMatch(anoRaw?.toString() ?? '');
+                final anoMatch = RegExp(r'(?:19|20)\d{2}').firstMatch(anoRaw?.toString() ?? '');
                 if (anoMatch != null) anosCatalogo[id] = anoMatch.group(0)!;
               }
             }
@@ -242,7 +242,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
           pasta: pasta,
           cartas: cartas,
           logo: arquivoLogo != null && await arquivoLogo.exists() ? arquivoLogo : null,
-          ano: anosCatalogo[id] ?? RegExp(r'(?:19|20)\\d{2}').firstMatch(_nomePasta(pasta))?.group(0),
+          ano: anosCatalogo[id] ?? RegExp(r'(?:19|20)\d{2}').firstMatch(_nomePasta(pasta))?.group(0),
         ));
       }
 
