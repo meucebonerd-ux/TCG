@@ -40,12 +40,14 @@ class Colecao {
   final Directory pasta;
   final List<Carta> cartas;
   final File? logo;
+  final String? ano;
 
   const Colecao({
     required this.nome,
     required this.pasta,
     required this.cartas,
     this.logo,
+    this.ano,
   });
 }
 
@@ -167,6 +169,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       final pastaLogos = Directory('/sdcard/meuapp/logos');
       final arquivosLogo = <String, String>{};
       final ordemCatalogo = <String, int>{};
+      final anosCatalogo = <String, String>{};
       final arquivoCatalogo = File('${pastaLogos.path}/catalogo.json');
       if (await arquivoCatalogo.exists()) {
         final dados = jsonDecode(await arquivoCatalogo.readAsString());
@@ -179,6 +182,9 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
               if (id != null && id.isNotEmpty && nomeArquivo != null) {
                 arquivosLogo[id] = nomeArquivo;
                 ordemCatalogo[id] = i;
+                final anoRaw = item['ano'] ?? item['year'] ?? item['releaseYear'] ?? item['releaseDate'];
+                final anoMatch = RegExp(r'(?:19|20)\\d{2}').firstMatch(anoRaw?.toString() ?? '');
+                if (anoMatch != null) anosCatalogo[id] = anoMatch.group(0)!;
               }
             }
           }
@@ -236,6 +242,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
           pasta: pasta,
           cartas: cartas,
           logo: arquivoLogo != null && await arquivoLogo.exists() ? arquivoLogo : null,
+          ano: anosCatalogo[id] ?? RegExp(r'(?:19|20)\\d{2}').firstMatch(_nomePasta(pasta))?.group(0),
         ));
       }
 
@@ -398,94 +405,53 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     });
   }
 
-  Future<void> _abrirSeletorColecao() async {
-    if (colecoes.isEmpty) return;
+  String _nomeExibicao(Colecao item) =>
+      item.nome.replaceFirst(RegExp(r'^\\d+_'), '').replaceAll('_', ' ');
 
+  Future<void> _abrirBuscaColecao() async {
+    if (colecoes.isEmpty) return;
+    final controller = TextEditingController();
     final selecionada = await showModalBottomSheet<Colecao>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: SizedBox(
-          height: MediaQuery.of(sheetContext).size.height * 0.70,
-          child: Column(
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 8, 20, 16),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Selecionar coleção',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    childAspectRatio: 1.18,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                  ),
-                  itemCount: colecoes.length,
-                  itemBuilder: (context, index) {
-                    final item = colecoes[index];
-                    final ativa = colecaoSelecionada?.pasta.path == item.pasta.path;
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => Navigator.pop(sheetContext, item),
-                      child: Card(
-                        margin: EdgeInsets.zero,
-                        clipBehavior: Clip.antiAlias,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: ativa
-                              ? const BorderSide(color: Colors.blue, width: 2)
-                              : BorderSide.none,
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(10),
-                          child: Column(
-                            children: [
-                              Expanded(
-                                child: item.logo != null
-                                    ? Image.file(
-                                        item.logo!,
-                                        fit: BoxFit.contain,
-                                        errorBuilder: (_, __, ___) =>
-                                            const Icon(Icons.collections_outlined, size: 42),
-                                      )
-                                    : const Icon(Icons.collections_outlined, size: 42),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                item.nome.replaceFirst(RegExp(r'^\d+_'), '').replaceAll('_', ' '),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                              Text('${item.cartas.length} cartas',
-                                  style: Theme.of(context).textTheme.bodySmall),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
+      context: context, isScrollControlled: true, showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, atualizarBusca) {
+          final termo = controller.text.trim().toLowerCase();
+          final resultados = colecoes.where((item) {
+            final id = item.nome.split('_').first;
+            return termo.isEmpty || _nomeExibicao(item).toLowerCase().contains(termo) ||
+                id.contains(termo) || (item.ano ?? '').contains(termo) ||
+                item.nome.toLowerCase().contains(termo);
+          }).toList();
+          return SafeArea(child: Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.of(sheetContext).viewInsets.bottom + 16),
+            child: SizedBox(height: MediaQuery.of(sheetContext).size.height * 0.72,
+              child: Column(children: [
+                const Align(alignment: Alignment.centerLeft, child: Text('Buscar coleção', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600))),
+                const SizedBox(height: 12),
+                TextField(controller: controller, autofocus: true, onChanged: (_) => atualizarBusca(() {}),
+                  decoration: InputDecoration(hintText: 'Nome, ID ou ano (ex.: 151, 2023)', prefixIcon: const Icon(Icons.search),
+                    suffixIcon: controller.text.isEmpty ? null : IconButton(icon: const Icon(Icons.clear), onPressed: () { controller.clear(); atualizarBusca(() {}); }),
+                    border: const OutlineInputBorder())),
+                const SizedBox(height: 8),
+                Align(alignment: Alignment.centerLeft, child: Text('${resultados.length} coleções encontradas', style: Theme.of(context).textTheme.bodySmall)),
+                const SizedBox(height: 4),
+                Expanded(child: resultados.isEmpty ? const Center(child: Text('Nenhuma coleção corresponde à busca.')) :
+                  ListView.separated(itemCount: resultados.length, separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final item = resultados[index]; final id = item.nome.split('_').first;
+                      return ListTile(leading: SizedBox(width: 52, height: 52, child: item.logo != null ? Image.file(item.logo!, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Icon(Icons.collections_outlined)) : const Icon(Icons.collections_outlined)),
+                        title: Text(_nomeExibicao(item), maxLines: 2, overflow: TextOverflow.ellipsis),
+                        subtitle: Text('ID $id${item.ano == null ? '' : ' • ${item.ano}'} • ${item.cartas.length} cartas'),
+                        onTap: () => Navigator.pop(sheetContext, item));
+                    })),
+              ]),
+            ),
+          ));
+        },
       ),
     );
-
-    if (selecionada != null && mounted) {
-      setState(() => colecaoSelecionada = selecionada);
-    }
+    controller.dispose();
+    if (selecionada != null && mounted) setState(() => colecaoSelecionada = selecionada);
   }
 
   String _nomePasta(Directory pasta) {
@@ -513,9 +479,9 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       floatingActionButton: carregando || erroMsg.isNotEmpty || colecoes.isEmpty
           ? null
           : FloatingActionButton.extended(
-              onPressed: _abrirSeletorColecao,
-              icon: const Icon(Icons.collections_bookmark_outlined),
-              label: Text(selecionada == null ? 'Selecionar coleção' : 'Trocar coleção'),
+              onPressed: _abrirBuscaColecao,
+              icon: const Icon(Icons.search),
+              label: const Text('Buscar coleção'),
             ),
       body: carregando
           ? const Center(child: CircularProgressIndicator())
