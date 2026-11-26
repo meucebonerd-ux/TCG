@@ -206,7 +206,8 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       final resultado = <Colecao>[];
       for (final pasta in pastas) {
         final cartas = <Carta>[];
-        await for (final item in pasta.list(followLinks: false)) {
+        // Procura imagens também em subpastas da coleção.
+        await for (final item in pasta.list(recursive: true, followLinks: false)) {
           if (item is File) {
             final nomeArquivo = item.uri.pathSegments.isNotEmpty
                 ? item.uri.pathSegments.last
@@ -399,28 +400,53 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                   ),
                 )
               : selecionada == null
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.collections_bookmark_outlined, size: 64),
-                            const SizedBox(height: 16),
-                            const Text(
-                              'Selecione uma coleção para visualizar suas cartas.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 16),
-                            ),
-                            const SizedBox(height: 16),
-                            FilledButton.icon(
-                              onPressed: _abrirSeletorColecao,
-                              icon: const Icon(Icons.list),
-                              label: const Text('Escolher coleção'),
-                            ),
-                          ],
-                        ),
+                  ? GridView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        childAspectRatio: 1.18,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
                       ),
+                      itemCount: colecoes.length,
+                      itemBuilder: (context, index) {
+                        final item = colecoes[index];
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => setState(() => colecaoSelecionada = item),
+                          child: Card(
+                            margin: EdgeInsets.zero,
+                            clipBehavior: Clip.antiAlias,
+                            child: Padding(
+                              padding: const EdgeInsets.all(10),
+                              child: Column(
+                                children: [
+                                  Expanded(
+                                    child: item.logo != null
+                                        ? Image.file(
+                                            item.logo!,
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (_, __, ___) =>
+                                                const Icon(Icons.collections_outlined, size: 42),
+                                          )
+                                        : const Icon(Icons.collections_outlined, size: 42),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    item.nome.replaceFirst(RegExp(r'^\\d+_'), '').replaceAll('_', ' '),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                  ),
+                                  Text('${item.cartas.length} cartas',
+                                      style: Theme.of(context).textTheme.bodySmall),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
                     )
                   : selecionada.cartas.isEmpty
                       ? const Center(child: Text('Nenhuma imagem encontrada nesta coleção.'))
