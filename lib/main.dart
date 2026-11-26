@@ -21,7 +21,6 @@ class PokemonTcgApp extends StatelessWidget {
   }
 }
 
-// Tela 1: Lista de Coleções
 class ColecoesScreen extends StatefulWidget {
   const ColecoesScreen({super.key});
   @override
@@ -30,6 +29,8 @@ class ColecoesScreen extends StatefulWidget {
 
 class _ColecoesScreenState extends State<ColecoesScreen> {
   List<dynamic> colecoes = [];
+  bool carregando = true;
+  String erroMsg = '';
 
   @override
   void initState() {
@@ -38,18 +39,29 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   }
 
   Future<void> carregarDados() async {
-    // Pede permissão de armazenamento
+    // Pede permissão de armazenamento (para Android antigo e novo)
     await Permission.storage.request();
-    
+    await Permission.manageExternalStorage.request();
+
     try {
-      // Lê o arquivo JSON gerado no Termux
       final file = File('/sdcard/meuapp/dados.json');
-      final jsonString = await file.readAsString();
-      setState(() {
-        colecoes = jsonDecode(jsonString);
-      });
+      if (await file.exists()) {
+        final jsonString = await file.readAsString();
+        setState(() {
+          colecoes = jsonDecode(jsonString);
+          carregando = false;
+        });
+      } else {
+        setState(() {
+          erroMsg = 'Arquivo dados.json não encontrado em /sdcard/meuapp/';
+          carregando = false;
+        });
+      }
     } catch (e) {
-      print("Erro ao ler dados: $e");
+      setState(() {
+        erroMsg = 'Erro ao ler dados: $e';
+        carregando = false;
+      });
     }
   }
 
@@ -57,56 +69,58 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Coleções')),
-      body: GridView.builder(
-        padding: const EdgeInsets.all(8),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          childAspectRatio: 0.7,
-        ),
-        itemCount: colecoes.length,
-        itemBuilder: (context, index) {
-          final colecao = colecoes[index];
-          // Pega a primeira carta da coleção para usar como "logo"
-          final primeiraCarta = colecao['cartas'].isNotEmpty ? colecao['cartas'][0]['caminhoCompleto'] : null;
+      body: carregando
+          ? const Center(child: CircularProgressIndicator())
+          : erroMsg.isNotEmpty
+              ? Center(child: Text(erroMsg, style: const TextStyle(color: Colors.red)))
+              : GridView.builder(
+                  padding: const EdgeInsets.all(8),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    childAspectRatio: 0.7,
+                  ),
+                  itemCount: colecoes.length,
+                  itemBuilder: (context, index) {
+                    final colecao = colecoes[index];
+                    final primeiraCarta = colecao['cartas'].isNotEmpty ? colecao['cartas'][0]['caminhoCompleto'] : null;
 
-          return GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => CartasScreen(colecao: colecao),
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => CartasScreen(colecao: colecao),
+                          ),
+                        );
+                      },
+                      child: Card(
+                        child: Column(
+                          children: [
+                            Expanded(
+                              child: primeiraCarta != null
+                                  ? Image.file(File(primeiraCarta), fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.broken_image))
+                                  : const Icon(Icons.image),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.all(4.0),
+                              child: Text(
+                                colecao['nome'],
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 10),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-            child: Card(
-              child: Column(
-                children: [
-                  Expanded(
-                    child: primeiraCarta != null
-                        ? Image.file(File(primeiraCarta), fit: BoxFit.cover)
-                        : const Icon(Icons.image),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(4.0),
-                    child: Text(
-                      colecao['nome'],
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 10),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
     );
   }
 }
 
-// Tela 2: Lista de Cartas da Coleção
 class CartasScreen extends StatelessWidget {
   final dynamic colecao;
   const CartasScreen({super.key, required this.colecao});
@@ -134,7 +148,7 @@ class CartasScreen extends StatelessWidget {
               );
             },
             child: Card(
-              child: Image.file(File(carta['caminhoCompleto']), fit: BoxFit.cover),
+              child: Image.file(File(carta['caminhoCompleto']), fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.broken_image)),
             ),
           );
         },
@@ -143,7 +157,6 @@ class CartasScreen extends StatelessWidget {
   }
 }
 
-// Tela 3: Imagem Grande e Botão de Copiar
 class CartaDetalheScreen extends StatelessWidget {
   final dynamic carta;
   const CartaDetalheScreen({super.key, required this.carta});
@@ -151,7 +164,6 @@ class CartaDetalheScreen extends StatelessWidget {
   Future<void> copiarParaDownload(BuildContext context) async {
     try {
       final arquivoOrigem = File(carta['caminhoCompleto']);
-      // Obtém a pasta de downloads pública do Android
       final pastaDownload = Directory('/sdcard/Download');
       final nomeArquivo = carta['arquivo'];
       final arquivoDestino = File('${pastaDownload.path}/$nomeArquivo');
@@ -176,7 +188,7 @@ class CartaDetalheScreen extends StatelessWidget {
         children: [
           Expanded(
             child: InteractiveViewer(
-              child: Image.file(File(carta['caminhoCompleto'])),
+              child: Image.file(File(carta['caminhoCompleto']), errorBuilder: (c, e, s) => const Icon(Icons.broken_image)),
             ),
           ),
           Padding(
