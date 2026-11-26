@@ -121,9 +121,41 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         return;
       }
 
-      final raiz = Directory(raizColecoes);
-      if (!await raiz.exists()) {
-        throw Exception('Pasta não encontrada: $raizColecoes');
+      // Localiza "tcg fisico" sem depender de acentos ou caixa.
+      final pastaBase = Directory('/sdcard/meuapp');
+      if (!await pastaBase.exists()) {
+        throw Exception('Pasta /sdcard/meuapp não encontrada.');
+      }
+
+      String normalizarNome(String valor) {
+        return valor.toLowerCase()
+            .replaceAll('á', 'a').replaceAll('à', 'a')
+            .replaceAll('ã', 'a').replaceAll('â', 'a')
+            .replaceAll('é', 'e').replaceAll('ê', 'e')
+            .replaceAll('í', 'i').replaceAll('ó', 'o')
+            .replaceAll('ô', 'o').replaceAll('õ', 'o')
+            .replaceAll('ú', 'u').replaceAll('ç', 'c')
+            .trim();
+      }
+
+      Directory? raiz;
+      final diretoriosEncontrados = <String>[];
+      await for (final item in pastaBase.list(followLinks: false)) {
+        if (item is Directory) {
+          final nome = item.path.split(Platform.pathSeparator).last;
+          diretoriosEncontrados.add(nome);
+          if (normalizarNome(nome) == 'tcg fisico') {
+            raiz = item;
+            break;
+          }
+        }
+      }
+
+      if (raiz == null) {
+        throw Exception(
+          'Pasta "tcg fisico" não encontrada dentro de /sdcard/meuapp. '
+          'Pastas encontradas: ${diretoriosEncontrados.isEmpty ? "(nenhuma)" : diretoriosEncontrados.join(", ")}'
+        );
       }
 
       final pastas = <Directory>[];
