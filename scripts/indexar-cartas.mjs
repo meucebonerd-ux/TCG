@@ -11,11 +11,13 @@ const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLo
 const readJson=async(p,d)=>{try{return JSON.parse(await fs.readFile(p,'utf8'))}catch{return d}};
 const slugOf=u=>{try{return new URL(u).pathname.split('/').filter(Boolean).at(-1)||''}catch{return ''}};
 
-async function fetchHtml(client,url){
+let client;
+function getClient(){if(!client)client=new GhostClient({browser:'Chrome_131',timeout:90000});return client}
+async function fetchHtml(url){
   let last;
   for(let i=1;i<=5;i++){
-    try{const r=await client.fetch(url,{method:'GET'});if(!r.ok)throw Error('HTTP '+r.status);return await r.text()}
-    catch(e){last=e;await sleep(1500*i)}
+    try{const r=await getClient().fetch(url,{method:'GET'});if(!r.ok)throw Error('HTTP '+r.status);return await r.text()}
+    catch(e){last=e;try{if(client)await client.destroy()}catch{}client=new GhostClient({browser:'Chrome_131',timeout:90000});await sleep(1500*i)}
   }
   throw last;
 }
@@ -68,7 +70,6 @@ async function main(){
   if(!sets.length)throw Error('Não encontrei coleções no catálogo nem em tcgcollector_362_ids.txt');
   await fs.mkdir('/sdcard/Download',{recursive:true});
   const old=await readJson(OUT,{cards:[]}), index=new Map((old.cards||[]).map(x=>[x.collectionId+'|'+x.slug,x]));
-  const client=new GhostClient({browser:'Chrome_131',timeout:90000});
   let setCount=0,cardCount=0,errorCount=0;
   try{
     for(const set of sets){
@@ -81,7 +82,7 @@ async function main(){
       for(const f of files){const baseName=path.basename(String(f)),slug=baseName.split('__')[0];if(!bySlug.has(slug))bySlug.set(slug,[]);bySlug.get(slug).push(String(f))}
       console.log('\n['+set.id+'] '+(set.name||folder.name));
       let html;
-      try{html=await fetchHtml(client,set.url)}catch(e){errorCount++;console.log('Falha na coleção: '+e.message);continue}
+      try{html=await fetchHtml(set.url)}catch(e){errorCount++;console.log('Falha na coleção: '+e.message);continue}
       setCount++;
       const $=cheerio.load(html), links=new Map();
       $('a[href*="/cards/"]').each((_,el)=>{const href=$(el).attr('href');if(!href)return;const url=new URL(href,set.url).href.split('?')[0],slug=slugOf(url);if(slug)links.set(slug,url)});
@@ -91,7 +92,7 @@ async function main(){
         const key=set.id+'|'+slug, filesForCard=bySlug.get(slug)||[];
         let record=index.get(key);
         if(!record||record.needsReview||!record.name){
-          try{record={...parseCard(cheerio.load(await fetchHtml(client,url)),url),collectionId:String(set.id),collectionName:set.name||folder.name,files:filesForCard};index.set(key,record)}
+          try{record={...parseCard(cheerio.load(await fetchHtml(url)),url),collectionId:String(set.id),collectionName:set.name||folder.name,files:filesForCard};index.set(key,record)}
           catch(e){errorCount++;record=record||{slug,url,collectionId:String(set.id),collectionName:set.name||folder.name,supertype:'Unknown',types:[],files:filesForCard,needsReview:true,error:String(e)};record.files=filesForCard;index.set(key,record)}
         }else{record.files=filesForCard;index.set(key,record)}
         if(cardCount%20===0){await fs.writeFile(OUT,JSON.stringify({version:1,generatedAt:new Date().toISOString(),cards:[...index.values()]},null,2));console.log('Progresso: '+cardCount+' páginas; '+errorCount+' erros')}
@@ -99,7 +100,7 @@ async function main(){
       }
       await fs.writeFile(OUT,JSON.stringify({version:1,generatedAt:new Date().toISOString(),cards:[...index.values()]},null,2));
     }
-  }finally{try{await client.destroy()}catch{}}
+  }finally{try{if(client)await client.destroy()}catch{}}
   const cards=[...index.values()],matched=new Set(cards.flatMap(c=>(c.files||[]).map(f=>c.collectionId+'|'+path.basename(f))));
   const unmatched=[];
   for(const set of sets){
