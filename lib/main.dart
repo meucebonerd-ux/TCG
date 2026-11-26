@@ -1,10 +1,12 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+const String raizColecoes = '/sdcard/meuapp/tcg físico';
+const Set<String> extensoesImagem = {'.jpg', '.jpeg', '.png', '.webp', '.gif'};
+
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const PokemonTcgApp());
 }
 
@@ -15,184 +17,363 @@ class PokemonTcgApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Pokemon TCG Manager',
-      theme: ThemeData(primarySwatch: Colors.blue),
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        useMaterial3: true,
+      ),
       home: const ColecoesScreen(),
     );
   }
 }
 
+class Carta {
+  final String nome;
+  final File arquivo;
+
+  const Carta({required this.nome, required this.arquivo});
+}
+
+class Colecao {
+  final String nome;
+  final Directory pasta;
+  final List<Carta> cartas;
+
+  const Colecao({
+    required this.nome,
+    required this.pasta,
+    required this.cartas,
+  });
+}
+
 class ColecoesScreen extends StatefulWidget {
   const ColecoesScreen({super.key});
+
   @override
   State<ColecoesScreen> createState() => _ColecoesScreenState();
 }
 
 class _ColecoesScreenState extends State<ColecoesScreen> {
-  List<dynamic> colecoes = [];
+  List<Colecao> colecoes = [];
   bool carregando = true;
   String erroMsg = '';
 
   @override
   void initState() {
     super.initState();
-    carregarDados();
+    carregarColecoes();
   }
 
-  Future<void> carregarDados() async {
-    // Pede permissão de armazenamento (para Android antigo e novo)
-    await Permission.storage.request();
-    await Permission.manageExternalStorage.request();
+  Future<bool> garantirPermissao() async {
+    if (!Platform.isAndroid) return true;
+
+    var status = await Permission.manageExternalStorage.status;
+    if (status.isGranted) return true;
+
+    status = await Permission.manageExternalStorage.request();
+    if (status.isGranted) return true;
+
+    if (mounted) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Permissão de arquivos necessária'),
+          content: const Text(
+            'Para listar as coleções e abrir as imagens, permita que o '
+            'Pokemon TCG Manager gerencie todos os arquivos nas configurações '
+            'do Android. Depois volte ao aplicativo e atualize a tela.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await openAppSettings();
+              },
+              child: const Text('Abrir configurações'),
+            ),
+          ],
+        ),
+      );
+    }
+    return false;
+  }
+
+  Future<void> carregarColecoes() async {
+    if (mounted) {
+      setState(() {
+        carregando = true;
+        erroMsg = '';
+      });
+    }
 
     try {
-      final file = File('/sdcard/meuapp/dados.json');
-      if (await file.exists()) {
-        final jsonString = await file.readAsString();
+      final permitido = await garantirPermissao();
+      if (!permitido) {
+        if (mounted) {
+          setState(() {
+            erroMsg = 'Permissão de acesso aos arquivos não concedida.';
+            carregando = false;
+          });
+        }
+        return;
+      }
+
+      final raiz = Directory(raizColecoes);
+      if (!await raiz.exists()) {
+        throw Exception('Pasta não encontrada: $raizColecoes');
+      }
+
+      final pastas = <Directory>[];
+      await for (final item in raiz.list(followLinks: false)) {
+        if (item is Directory) pastas.add(item);
+      }
+      pastas.sort((a, b) => _nomePasta(a).toLowerCase().compareTo(_nomePasta(b).toLowerCase()));
+
+      final resultado = <Colecao>[];
+      for (final pasta in pastas) {
+        final cartas = <Carta>[];
+        await for (final item in pasta.list(followLinks: false)) {
+          if (item is File) {
+            final nomeArquivo = item.uri.pathSegments.isNotEmpty
+                ? item.uri.pathSegments.last
+                : item.path.split(Platform.pathSeparator).last;
+            final ponto = nomeArquivo.lastIndexOf('.');
+            final extensao = ponto >= 0 ? nomeArquivo.substring(ponto).toLowerCase() : '';
+            if (extensoesImagem.contains(extensao)) {
+              final nome = ponto > 0 ? nomeArquivo.substring(0, ponto) : nomeArquivo;
+              cartas.add(Carta(nome: nome, arquivo: item));
+            }
+          }
+        }
+        cartas.sort((a, b) => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()));
+        resultado.add(Colecao(
+          nome: _nomePasta(pasta),
+          pasta: pasta,
+          cartas: cartas,
+        ));
+      }
+
+      if (mounted) {
         setState(() {
-          colecoes = jsonDecode(jsonString);
-          carregando = false;
-        });
-      } else {
-        setState(() {
-          erroMsg = 'Arquivo dados.json não encontrado em /sdcard/meuapp/';
+          colecoes = resultado;
           carregando = false;
         });
       }
     } catch (e) {
-      setState(() {
-        erroMsg = 'Erro ao ler dados: $e';
-        carregando = false;
-      });
+      if (mounted) {
+        setState(() {
+          erroMsg = 'Erro ao carregar coleções: $e';
+          carregando = false;
+        });
+      }
     }
+  }
+
+  String _nomePasta(Directory pasta) {
+    final caminho = pasta.path.endsWith(Platform.pathSeparator)
+        ? pasta.path.substring(0, pasta.path.length - 1)
+        : pasta.path;
+    return caminho.split(Platform.pathSeparator).last;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Coleções')),
+      appBar: AppBar(
+        title: const Text('Coleções'),
+        actions: [
+          IconButton(
+            tooltip: 'Atualizar',
+            onPressed: carregarColecoes,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
       body: carregando
           ? const Center(child: CircularProgressIndicator())
           : erroMsg.isNotEmpty
-              ? Center(child: Text(erroMsg, style: const TextStyle(color: Colors.red)))
-              : GridView.builder(
-                  padding: const EdgeInsets.all(8),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    childAspectRatio: 0.7,
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.error_outline, size: 42),
+                        const SizedBox(height: 12),
+                        Text(erroMsg, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: carregarColecoes,
+                          child: const Text('Tentar novamente'),
+                        ),
+                      ],
+                    ),
                   ),
-                  itemCount: colecoes.length,
-                  itemBuilder: (context, index) {
-                    final colecao = colecoes[index];
-                    final primeiraCarta = colecao['cartas'].isNotEmpty ? colecao['cartas'][0]['caminhoCompleto'] : null;
+                )
+              : colecoes.isEmpty
+                  ? const Center(child: Text('Nenhuma pasta de coleção encontrada.'))
+                  : GridView.builder(
+                      padding: const EdgeInsets.all(12),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        childAspectRatio: 0.68,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                      ),
+                      itemCount: colecoes.length,
+                      itemBuilder: (context, index) {
+                        final colecao = colecoes[index];
+                        final capa = colecao.cartas.isNotEmpty ? colecao.cartas.first.arquivo : null;
 
-                    return GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => CartasScreen(colecao: colecao),
+                        return Card(
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => CartasScreen(colecao: colecao),
+                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: capa != null
+                                        ? Image.file(
+                                            capa,
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (_, __, ___) =>
+                                                const Icon(Icons.broken_image, size: 42),
+                                          )
+                                        : const Icon(Icons.photo_library_outlined, size: 42),
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.all(6),
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        colecao.nome,
+                                        textAlign: TextAlign.center,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 11),
+                                      ),
+                                      Text(
+                                        '${colecao.cartas.length} cartas',
+                                        style: Theme.of(context).textTheme.bodySmall,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         );
                       },
-                      child: Card(
-                        child: Column(
-                          children: [
-                            Expanded(
-                              child: primeiraCarta != null
-                                  ? Image.file(File(primeiraCarta), fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.broken_image))
-                                  : const Icon(Icons.image),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.all(4.0),
-                              child: Text(
-                                colecao['nome'],
-                                textAlign: TextAlign.center,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 10),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                    ),
     );
   }
 }
 
 class CartasScreen extends StatelessWidget {
-  final dynamic colecao;
+  final Colecao colecao;
+
   const CartasScreen({super.key, required this.colecao});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(colecao['nome'])),
-      body: GridView.builder(
-        padding: const EdgeInsets.all(8),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 0.7,
-        ),
-        itemCount: colecao['cartas'].length,
-        itemBuilder: (context, index) {
-          final carta = colecao['cartas'][index];
-          return GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => CartaDetalheScreen(carta: carta),
-                ),
-              );
-            },
-            child: Card(
-              child: Image.file(File(carta['caminhoCompleto']), fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.broken_image)),
+      appBar: AppBar(title: Text(colecao.nome)),
+      body: colecao.cartas.isEmpty
+          ? const Center(child: Text('Nenhuma imagem encontrada nesta coleção.'))
+          : GridView.builder(
+              padding: const EdgeInsets.all(8),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 0.68,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemCount: colecao.cartas.length,
+              itemBuilder: (context, index) {
+                final carta = colecao.cartas[index];
+                return InkWell(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CartaDetalheScreen(carta: carta),
+                    ),
+                  ),
+                  child: Card(
+                    clipBehavior: Clip.antiAlias,
+                    child: Image.file(
+                      carta.arquivo,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.broken_image, size: 42),
+                    ),
+                  ),
+                );
+              },
             ),
-          );
-        },
-      ),
     );
   }
 }
 
 class CartaDetalheScreen extends StatelessWidget {
-  final dynamic carta;
+  final Carta carta;
+
   const CartaDetalheScreen({super.key, required this.carta});
 
   Future<void> copiarParaDownload(BuildContext context) async {
     try {
-      final arquivoOrigem = File(carta['caminhoCompleto']);
       final pastaDownload = Directory('/sdcard/Download');
-      final nomeArquivo = carta['arquivo'];
-      final arquivoDestino = File('${pastaDownload.path}/$nomeArquivo');
+      if (!await pastaDownload.exists()) {
+        await pastaDownload.create(recursive: true);
+      }
+      final nomeArquivo = carta.arquivo.uri.pathSegments.last;
+      final destino = File('${pastaDownload.path}/$nomeArquivo');
+      await carta.arquivo.copy(destino.path);
 
-      await arquivoOrigem.copy(arquivoDestino.path);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Carta copiada para Download!')),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Carta copiada para Downloads!')),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao copiar: $e')),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao copiar: $e')),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(carta['nome'])),
+      appBar: AppBar(title: Text(carta.nome)),
       body: Column(
         children: [
           Expanded(
             child: InteractiveViewer(
-              child: Image.file(File(carta['caminhoCompleto']), errorBuilder: (c, e, s) => const Icon(Icons.broken_image)),
+              child: Center(
+                child: Image.file(
+                  carta.arquivo,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) =>
+                      const Icon(Icons.broken_image, size: 64),
+                ),
+              ),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(16),
             child: ElevatedButton.icon(
               onPressed: () => copiarParaDownload(context),
               icon: const Icon(Icons.download),
