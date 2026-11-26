@@ -194,7 +194,14 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
           colecoes = resultado;
           if (colecaoSelecionada != null) {
             final caminhoSelecionado = colecaoSelecionada!.pasta.path;
-            colecaoSelecionada = resultado.where((item) => item.pasta.path == caminhoSelecionado).firstOrNull;
+            Colecao? encontrada;
+            for (final item in resultado) {
+              if (item.pasta.path == caminhoSelecionado) {
+                encontrada = item;
+                break;
+              }
+            }
+            colecaoSelecionada = encontrada;
           }
           carregando = false;
         });
