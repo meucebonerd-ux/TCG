@@ -30,8 +30,9 @@ class PokemonTcgApp extends StatelessWidget {
 class Carta {
   final String nome;
   final File arquivo;
+  final Map<String, dynamic>? dados;
 
-  const Carta({required this.nome, required this.arquivo});
+  const Carta({required this.nome, required this.arquivo, this.dados});
 }
 
 class Colecao {
@@ -203,8 +204,10 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         return _nomePasta(a).toLowerCase().compareTo(_nomePasta(b).toLowerCase());
       });
 
+      final indiceCartas = await _carregarIndiceCartas();
       final resultado = <Colecao>[];
       for (final pasta in pastas) {
+        final id = idDaPasta(pasta);
         final cartas = <Carta>[];
         // Procura imagens também em subpastas da coleção.
         await for (final item in pasta.list(recursive: true, followLinks: false)) {
@@ -216,12 +219,16 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
             final extensao = ponto >= 0 ? nomeArquivo.substring(ponto).toLowerCase() : '';
             if (extensoesImagem.contains(extensao)) {
               final nome = ponto > 0 ? nomeArquivo.substring(0, ponto) : nomeArquivo;
-              cartas.add(Carta(nome: nome, arquivo: item));
+              final slug = nomeArquivo.split('__').first;
+              cartas.add(Carta(
+                nome: nome,
+                arquivo: item,
+                dados: indiceCartas['$id|$slug'],
+              ));
             }
           }
         }
-        cartas.sort((a, b) => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()));
-        final id = idDaPasta(pasta);
+        _ordenarCartas(cartas);
         final nomeLogo = arquivosLogo[id];
         final arquivoLogo = nomeLogo == null ? null : File('${pastaLogos.path}/$nomeLogo');
         resultado.add(Colecao(
@@ -257,6 +264,138 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         });
       }
     }
+  }
+
+
+  Future<Map<String, Map<String, dynamic>>> _carregarIndiceCartas() async {
+    final resultado = <String, Map<String, dynamic>>{};
+    final arquivo = File('/sdcard/meuapp/dados_cartas.json');
+    if (!await arquivo.exists()) return resultado;
+    try {
+      final json = jsonDecode(await arquivo.readAsString());
+      if (json is Map && json['cards'] is List) {
+        for (final item in json['cards']) {
+          if (item is Map) {
+            final id = item['collectionId']?.toString();
+            final slug = item['slug']?.toString();
+            if (id != null && slug != null) {
+              resultado['$id|$slug'] = Map<String, dynamic>.from(item);
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return resultado;
+  }
+
+  String _normalizarChave(String valor) => valor
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .trim();
+
+  void _ordenarCartas(List<Carta> cartas) {
+    const tipos = [
+      'grass', 'fire', 'water', 'lightning', 'psychic', 'fighting',
+      'darkness', 'metal', 'fairy', 'dragon', 'colorless'
+    ];
+    const aliases = {
+      'grama': 'grass', 'planta': 'grass', 'fogo': 'fire',
+      'agua': 'water', 'eletrico': 'lightning', 'raios': 'lightning',
+      'psiquico': 'psychic', 'lutador': 'fighting', 'sombrio': 'darkness',
+      'noturno': 'darkness', 'metalico': 'metal', 'metal': 'metal',
+      'fada': 'fairy', 'dragao': 'dragon', 'incolor': 'colorless',
+    };
+    String tipoDa(Carta c) {
+      final raw = (c.dados?['types'] is List && (c.dados!['types'] as List).isNotEmpty)
+          ? (c.dados!['types'] as List).first.toString().toLowerCase()
+          : (c.dados?['energyType']?.toString().toLowerCase() ?? '');
+      return aliases[raw] ?? raw;
+    }
+    int indiceTipo(Carta c) {
+      final i = tipos.indexOf(tipoDa(c));
+      return i < 0 ? 99 : i;
+    }
+    int numero(Carta c) {
+      final n = c.dados?['numberSort'];
+      if (n is num) return n.toInt();
+      final match = (c.dados?['number']?.toString() ?? '').matchAsPrefix(RegExp(r'\d+'));
+      return match == null ? 999999 : int.tryParse(match.group(0)!) ?? 999999;
+    }
+    int estagio(Carta c) {
+      final s = _normalizarChave(c.dados?['stage']?.toString() ?? '');
+      if (s == 'basic') return 0;
+      if (s == 'stage 1') return 1;
+      if (s == 'stage 2') return 2;
+      return 3;
+    }
+
+    final porNome = <String, List<Carta>>{};
+    for (final c in cartas) {
+      final nome = _normalizarChave(c.dados?['name']?.toString() ?? '');
+      if (nome.isNotEmpty) porNome.putIfAbsent(nome, () => []).add(c);
+    }
+    String linhaEvolutiva(Carta carta) {
+      var atual = carta;
+      final visitados = <String>{};
+      while (true) {
+        final pai = _normalizarChave(atual.dados?['evolvesFrom']?.toString() ?? '');
+        if (pai.isEmpty || visitados.contains(pai)) {
+          return _normalizarChave(atual.dados?['name']?.toString() ?? carta.nome);
+        }
+        visitados.add(pai);
+        final candidatos = porNome[pai];
+        if (candidatos == null || candidatos.isEmpty) return pai;
+        atual = candidatos.first;
+      }
+    }
+    int categoria(Carta c) {
+      final supertipo = (c.dados?['supertype'] ?? '').toString().toLowerCase();
+      if (supertipo == 'pokemon' || supertipo == 'pokémon') return 0;
+      if (supertipo == 'trainer') return 1;
+      if (supertipo == 'energy') return 2;
+      return 3;
+    }
+    int subtipoTreinador(Carta c) {
+      switch (_normalizarChave(c.dados?['trainerSubtype']?.toString() ?? '')) {
+        case 'item': return 0;
+        case 'stadium': return 1;
+        case 'supporter': return 2;
+        case 'pokemon tool': return 3;
+        default: return 9;
+      }
+    }
+    int subtipoEnergia(Carta c) {
+      final value = (c.dados?['energyCategory'] ?? '').toString().toLowerCase();
+      if (value == 'basic') return 0;
+      if (value == 'special') return 1;
+      return 2;
+    }
+
+    cartas.sort((a, b) {
+      final ca = categoria(a), cb = categoria(b);
+      if (ca != cb) return ca.compareTo(cb);
+      if (ca == 0) {
+        var r = indiceTipo(a).compareTo(indiceTipo(b));
+        if (r != 0) return r;
+        r = linhaEvolutiva(a).compareTo(linhaEvolutiva(b));
+        if (r != 0) return r;
+        r = estagio(a).compareTo(estagio(b));
+        if (r != 0) return r;
+      } else if (ca == 1) {
+        final r = subtipoTreinador(a).compareTo(subtipoTreinador(b));
+        if (r != 0) return r;
+      } else if (ca == 2) {
+        final r = subtipoEnergia(a).compareTo(subtipoEnergia(b));
+        if (r != 0) return r;
+        if (subtipoEnergia(a) == 0) {
+          final r2 = indiceTipo(a).compareTo(indiceTipo(b));
+          if (r2 != 0) return r2;
+        }
+      }
+      final n = numero(a).compareTo(numero(b));
+      if (n != 0) return n;
+      return a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
+    });
   }
 
   Future<void> _abrirSeletorColecao() async {
@@ -433,7 +572,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                                   ),
                                   const SizedBox(height: 6),
                                   Text(
-                                    item.nome.replaceFirst(RegExp(r'^\\d+_'), '').replaceAll('_', ' '),
+                                    item.nome.replaceFirst(RegExp(r'^\d+_'), '').replaceAll('_', ' '),
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     textAlign: TextAlign.center,
