@@ -229,7 +229,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
               cartas.add(Carta(
                 nome: nome,
                 arquivo: item,
-                dados: indiceCartas['$id|$slug'],
+                dados: indiceCartas['$id|${_normalizarChave(slug)}'],
               ));
             }
           }
@@ -286,7 +286,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
             final id = item['collectionId']?.toString();
             final slug = item['slug']?.toString();
             if (id != null && slug != null) {
-              resultado['$id|$slug'] = Map<String, dynamic>.from(item);
+              resultado['$id|${_normalizarChave(slug)}'] = Map<String, dynamic>.from(item);
             }
           }
         }
