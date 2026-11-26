@@ -318,7 +318,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     int numero(Carta c) {
       final n = c.dados?['numberSort'];
       if (n is num) return n.toInt();
-      final match = (c.dados?['number']?.toString() ?? '').matchAsPrefix(RegExp(r'\d+'));
+      final match = RegExp(r'^\d+').firstMatch(c.dados?['number']?.toString() ?? '');
       return match == null ? 999999 : int.tryParse(match.group(0)!) ?? 999999;
     }
     int estagio(Carta c) {
