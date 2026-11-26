@@ -54,6 +54,7 @@ class ColecoesScreen extends StatefulWidget {
 
 class _ColecoesScreenState extends State<ColecoesScreen> {
   List<Colecao> colecoes = [];
+  Colecao? colecaoSelecionada;
   bool carregando = true;
   String erroMsg = '';
 
@@ -191,6 +192,10 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       if (mounted) {
         setState(() {
           colecoes = resultado;
+          if (colecaoSelecionada != null) {
+            final caminhoSelecionado = colecaoSelecionada!.pasta.path;
+            colecaoSelecionada = resultado.where((item) => item.pasta.path == caminhoSelecionado).firstOrNull;
+          }
           carregando = false;
         });
       }
@@ -204,6 +209,71 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     }
   }
 
+  Future<void> _abrirSeletorColecao() async {
+    if (colecoes.isEmpty) return;
+
+    final selecionada = await showModalBottomSheet<Colecao>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * 0.70,
+          child: Column(
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 8, 20, 16),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Selecionar coleção',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: colecoes.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final item = colecoes[index];
+                    final ativa = colecaoSelecionada?.pasta.path == item.pasta.path;
+                    return ListTile(
+                      leading: item.cartas.isNotEmpty
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: Image.file(
+                                item.cartas.first.arquivo,
+                                width: 42,
+                                height: 56,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => const Icon(Icons.collections_outlined),
+                              ),
+                            )
+                          : const SizedBox(
+                              width: 42,
+                              height: 56,
+                              child: Icon(Icons.collections_outlined),
+                            ),
+                      title: Text(item.nome, maxLines: 2, overflow: TextOverflow.ellipsis),
+                      subtitle: Text('${item.cartas.length} cartas'),
+                      trailing: ativa ? const Icon(Icons.check, color: Colors.blue) : null,
+                      onTap: () => Navigator.pop(sheetContext, item),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (selecionada != null && mounted) {
+      setState(() => colecaoSelecionada = selecionada);
+    }
+  }
+
   String _nomePasta(Directory pasta) {
     final caminho = pasta.path.endsWith(Platform.pathSeparator)
         ? pasta.path.substring(0, pasta.path.length - 1)
@@ -213,9 +283,11 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final selecionada = colecaoSelecionada;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Coleções'),
+        title: Text(selecionada == null ? 'Cartas' : selecionada.nome),
         actions: [
           IconButton(
             tooltip: 'Atualizar',
@@ -224,6 +296,13 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
           ),
         ],
       ),
+      floatingActionButton: carregando || erroMsg.isNotEmpty || colecoes.isEmpty
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _abrirSeletorColecao,
+              icon: const Icon(Icons.collections_bookmark_outlined),
+              label: Text(selecionada == null ? 'Selecionar coleção' : 'Trocar coleção'),
+            ),
       body: carregando
           ? const Center(child: CircularProgressIndicator())
           : erroMsg.isNotEmpty
@@ -245,69 +324,62 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                     ),
                   ),
                 )
-              : colecoes.isEmpty
-                  ? const Center(child: Text('Nenhuma pasta de coleção encontrada.'))
-                  : GridView.builder(
-                      padding: const EdgeInsets.all(12),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        childAspectRatio: 0.68,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
+              : selecionada == null
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.collections_bookmark_outlined, size: 64),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Selecione uma coleção para visualizar suas cartas.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 16),
+                            ),
+                            const SizedBox(height: 16),
+                            FilledButton.icon(
+                              onPressed: _abrirSeletorColecao,
+                              icon: const Icon(Icons.list),
+                              label: const Text('Escolher coleção'),
+                            ),
+                          ],
+                        ),
                       ),
-                      itemCount: colecoes.length,
-                      itemBuilder: (context, index) {
-                        final colecao = colecoes[index];
-                        final capa = colecao.cartas.isNotEmpty ? colecao.cartas.first.arquivo : null;
-
-                        return Card(
-                          clipBehavior: Clip.antiAlias,
-                          child: InkWell(
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => CartasScreen(colecao: colecao),
-                              ),
-                            ),
-                            child: Column(
-                              children: [
-                                Expanded(
-                                  child: SizedBox(
-                                    width: double.infinity,
-                                    child: capa != null
-                                        ? Image.file(
-                                            capa,
-                                            fit: BoxFit.contain,
-                                            errorBuilder: (_, __, ___) =>
-                                                const Icon(Icons.broken_image, size: 42),
-                                          )
-                                        : const Icon(Icons.photo_library_outlined, size: 42),
-                                  ),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.all(6),
-                                  child: Column(
-                                    children: [
-                                      Text(
-                                        colecao.nome,
-                                        textAlign: TextAlign.center,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontSize: 11),
-                                      ),
-                                      Text(
-                                        '${colecao.cartas.length} cartas',
-                                        style: Theme.of(context).textTheme.bodySmall,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
+                    )
+                  : selecionada.cartas.isEmpty
+                      ? const Center(child: Text('Nenhuma imagem encontrada nesta coleção.'))
+                      : GridView.builder(
+                          padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            childAspectRatio: 0.68,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
                           ),
-                        );
-                      },
-                    ),
+                          itemCount: selecionada.cartas.length,
+                          itemBuilder: (context, index) {
+                            final carta = selecionada.cartas[index];
+                            return InkWell(
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => CartaDetalheScreen(carta: carta),
+                                ),
+                              ),
+                              child: Card(
+                                clipBehavior: Clip.antiAlias,
+                                child: Image.file(
+                                  carta.arquivo,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, __, ___) =>
+                                      const Icon(Icons.broken_image, size: 42),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
     );
   }
 }
