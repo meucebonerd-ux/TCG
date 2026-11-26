@@ -18,7 +18,7 @@ jobs:
           channel: 'stable'
           
       - name: Criar projeto Flutter
-        run: flutter create .
+        run: flutter create --project-name pokemon_tcg_app .
         
       - name: Commitar e enviar pasta android
         run: |
