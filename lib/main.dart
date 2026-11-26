@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -37,11 +38,13 @@ class Colecao {
   final String nome;
   final Directory pasta;
   final List<Carta> cartas;
+  final File? logo;
 
   const Colecao({
     required this.nome,
     required this.pasta,
     required this.cartas,
+    this.logo,
   });
 }
 
@@ -159,11 +162,46 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         );
       }
 
+      // Catálogo oficial de logos: cada pasta local começa com o ID da coleção.
+      final pastaLogos = Directory('/sdcard/meuapp/logos');
+      final arquivosLogo = <String, String>{};
+      final ordemCatalogo = <String, int>{};
+      final arquivoCatalogo = File('${pastaLogos.path}/catalogo.json');
+      if (await arquivoCatalogo.exists()) {
+        final dados = jsonDecode(await arquivoCatalogo.readAsString());
+        if (dados is List) {
+          for (var i = 0; i < dados.length; i++) {
+            final item = dados[i];
+            if (item is Map) {
+              final id = item['id']?.toString();
+              final nomeArquivo = item['arquivo']?.toString();
+              if (id != null && id.isNotEmpty && nomeArquivo != null) {
+                arquivosLogo[id] = nomeArquivo;
+                ordemCatalogo[id] = i;
+              }
+            }
+          }
+        }
+      }
+
+      String idDaPasta(Directory pasta) {
+        final nome = _nomePasta(pasta);
+        final separador = nome.indexOf('_');
+        return separador > 0 ? nome.substring(0, separador) : nome;
+      }
+
       final pastas = <Directory>[];
       await for (final item in raiz.list(followLinks: false)) {
         if (item is Directory) pastas.add(item);
       }
-      pastas.sort((a, b) => _nomePasta(a).toLowerCase().compareTo(_nomePasta(b).toLowerCase()));
+      pastas.sort((a, b) {
+        final idA = idDaPasta(a);
+        final idB = idDaPasta(b);
+        final posA = ordemCatalogo[idA] ?? 999999;
+        final posB = ordemCatalogo[idB] ?? 999999;
+        if (posA != posB) return posA.compareTo(posB);
+        return _nomePasta(a).toLowerCase().compareTo(_nomePasta(b).toLowerCase());
+      });
 
       final resultado = <Colecao>[];
       for (final pasta in pastas) {
@@ -182,10 +220,14 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
           }
         }
         cartas.sort((a, b) => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()));
+        final id = idDaPasta(pasta);
+        final nomeLogo = arquivosLogo[id];
+        final arquivoLogo = nomeLogo == null ? null : File('${pastaLogos.path}/$nomeLogo');
         resultado.add(Colecao(
           nome: _nomePasta(pasta),
           pasta: pasta,
           cartas: cartas,
+          logo: arquivoLogo != null && await arquivoLogo.exists() ? arquivoLogo : null,
         ));
       }
 
@@ -239,33 +281,58 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                 ),
               ),
               Expanded(
-                child: ListView.separated(
+                child: GridView.builder(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    childAspectRatio: 1.18,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                  ),
                   itemCount: colecoes.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final item = colecoes[index];
                     final ativa = colecaoSelecionada?.pasta.path == item.pasta.path;
-                    return ListTile(
-                      leading: item.cartas.isNotEmpty
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(6),
-                              child: Image.file(
-                                item.cartas.first.arquivo,
-                                width: 42,
-                                height: 56,
-                                fit: BoxFit.contain,
-                                errorBuilder: (_, __, ___) => const Icon(Icons.collections_outlined),
-                              ),
-                            )
-                          : const SizedBox(
-                              width: 42,
-                              height: 56,
-                              child: Icon(Icons.collections_outlined),
-                            ),
-                      title: Text(item.nome, maxLines: 2, overflow: TextOverflow.ellipsis),
-                      subtitle: Text('${item.cartas.length} cartas'),
-                      trailing: ativa ? const Icon(Icons.check, color: Colors.blue) : null,
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(12),
                       onTap: () => Navigator.pop(sheetContext, item),
+                      child: Card(
+                        margin: EdgeInsets.zero,
+                        clipBehavior: Clip.antiAlias,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: ativa
+                              ? const BorderSide(color: Colors.blue, width: 2)
+                              : BorderSide.none,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Column(
+                            children: [
+                              Expanded(
+                                child: item.logo != null
+                                    ? Image.file(
+                                        item.logo!,
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (_, __, ___) =>
+                                            const Icon(Icons.collections_outlined, size: 42),
+                                      )
+                                    : const Icon(Icons.collections_outlined, size: 42),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                item.nome.replaceFirst(RegExp(r'^\\d+_'), '').replaceAll('_', ' '),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              Text('${item.cartas.length} cartas',
+                                  style: Theme.of(context).textTheme.bodySmall),
+                            ],
+                          ),
+                        ),
+                      ),
                     );
                   },
                 ),
