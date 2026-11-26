@@ -31,7 +31,10 @@ function parseCard($,url){
     for(const t of known)if(norm(v).includes(norm(t))&&!types.includes(t))types.push(t);
   });
   let supertype='Unknown';
-  if(/\bpokemon\b/.test(low))supertype='Pokemon';else if(/\btrainer\b/.test(low))supertype='Trainer';else if(/\benergy\b/.test(low))supertype='Energy';
+  if(/\btrainer\b/.test(low))supertype='Trainer';
+  else if(/\b(?:basic|special)\s+energy\b/.test(low))supertype='Energy';
+  else if(/\bpokemon\b/.test(low))supertype='Pokemon';
+  else if(/\benergy\b/.test(low))supertype='Energy';
   const sm=body.match(/\b(Basic|Stage\s*1|Stage\s*2|Level[- ]?Up|Restored|BREAK|LEGEND|VMAX|VSTAR|V-UNION)\s*(?:Pok[eé]mon)?\b/i);
   let stage=sm?sm[1].replace(/\s+/g,' ').replace(/^./,c=>c.toUpperCase()):null;
   const em=body.match(/Evolves\s+from\s+([A-Za-z0-9'’ .-]+?)(?=\s+(?:HP|Pok[eé]mon|Stage|Type|Weakness|Resistance|Retreat|Expansion|Card number|Illustrator)\b|$)/i);
