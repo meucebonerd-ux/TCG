@@ -321,7 +321,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                item.nome.replaceFirst(RegExp(r'^\\d+_'), '').replaceAll('_', ' '),
+                                item.nome.replaceFirst(RegExp(r'^\d+_'), '').replaceAll('_', ' '),
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 textAlign: TextAlign.center,
