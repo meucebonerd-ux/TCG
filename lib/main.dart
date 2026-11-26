@@ -43,7 +43,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     
     try {
       // Lê o arquivo JSON gerado no Termux
-      final file = File('/sdcard/tcg fisico/dados.json');
+      final file = File('/sdcard/meuapp/dados.json');
       final jsonString = await file.readAsString();
       setState(() {
         colecoes = jsonDecode(jsonString);
