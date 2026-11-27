@@ -6,6 +6,7 @@ import * as cheerio from 'cheerio';
 const ROOT='/sdcard/meuapp', OUT=path.join(ROOT,'dados_cartas.json');
 const REPO_OUT=path.join(process.cwd(),'assets/data/dados_cartas.json');
 const TARGET_ID=process.argv.find(x=>x.startsWith('--id='))?.slice(5);
+const FORCE_REINDEX=process.argv.includes('--force');
 const REPORT='/sdcard/Download/relatorio_indice_cartas.json';
 const INPUT=path.join(process.cwd(),'tcgcollector_362_ids.txt');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -110,7 +111,7 @@ async function main(){
         cardCount++;
         const key=set.id+'|'+slug, filesForCard=bySlug.get(slug)||[];
         let record=index.get(key);
-        if(!record||record.needsReview||!record.name){
+        if(FORCE_REINDEX||!record||record.needsReview||!record.name){
           try{record={...parseCard(cheerio.load(await fetchHtml(url)),url),collectionId:String(set.id),collectionName:set.name||folder.name,files:filesForCard};index.set(key,record)}
           catch(e){errorCount++;record=record||{slug,url,collectionId:String(set.id),collectionName:set.name||folder.name,supertype:'Unknown',types:[],files:filesForCard,needsReview:true,error:String(e)};record.files=filesForCard;index.set(key,record)}
         }else{record.files=filesForCard;index.set(key,record)}
