@@ -37,7 +37,7 @@ jobs:
         with:
           node-version: "22"
       - name: Instalar parser HTML
-        run: npm install --no-save cheerio@1.0.0-rc.12
+        run: npm install --no-save cheerio@1.0.0-rc.12 ghostfetch@0.1.2
       - name: Validar sintaxe do indexador
         run: node --check scripts/indexar-delta-reign.mjs
       - name: Indexar coleção do TCG Collector
