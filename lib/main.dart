@@ -698,6 +698,8 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         final ext = ponto >= 0 ? nomeArquivo.substring(ponto).toLowerCase() : '';
         if (!extensoesImagem.contains(ext)) continue;
         imagensPorChave['$id|${_normalizarChave(nomeArquivo)}'] = item;
+        final slugLocal = _slugDoArquivoLocal(nomeArquivo);
+        if (slugLocal.isNotEmpty) imagensPorChave['$id|${_normalizarChave(slugLocal)}'] = item;
       }
     }
     final cartasPreparadas = <Carta>[];
