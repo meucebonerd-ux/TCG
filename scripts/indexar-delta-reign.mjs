@@ -90,7 +90,7 @@ function extractCollectorCards(html) {
 }
 
 function energyElementalType(name, types) {
-  const normalized = String(name ?? '').toLowerCase().replace(/^basic\\s+/, '');
+  const normalized = String(name ?? '').toLowerCase().replace(/^basic\s+/, '');
   return KNOWN_TYPES.find(type => normalized.startsWith(type.toLowerCase() + ' ')) ??
     (Array.isArray(types) ? types[0] ?? null : null);
 }
@@ -140,7 +140,7 @@ async function main() {
       // Energias Especiais ilustradas. Só é Básica quando o nome é exatamente
       // "Grass Energy", "Basic Grass Energy" etc.; as demais são Especiais.
       const normalizedEnergyName = String(card.name ?? '').normalize('NFD')
-        .replace(/[\\u0300-\\u036f]/g, '').trim().toLowerCase();
+        .replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
       const isBasicEnergy = isEnergy &&
         /^(?:basic )?(grass|fire|water|lightning|psychic|fighting|darkness|metal|fairy|dragon|colorless) energy$/.test(normalizedEnergyName);
       const energyCategory = isEnergy ? (isBasicEnergy ? 'Basic' : 'Special') : null;
