@@ -3,7 +3,7 @@ import * as cheerio from 'cheerio';
 
 const COLLECTION_ID = String(process.env.COLLECTION_ID ?? '').trim();
 const COLLECTION_NAME = String(process.env.COLLECTION_NAME ?? '').trim();
-const COLLECTION_SLUG = String(process.env.COLLECTION_SLUG ?? COLLECTION_NAME.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')).trim();
+const COLLECTION_SLUG = String(process.env.COLLECTION_SLUG ?? COLLECTION_NAME.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')).trim();
 const TCGCOLLECTOR_URL = String(process.env.TCGCOLLECTOR_URL ?? (COLLECTION_ID && COLLECTION_SLUG ? `https://www.tcgcollector.com/sets/${COLLECTION_ID}/${COLLECTION_SLUG}?setCardCountMode=anyCardVariant` : '')).trim();
 const EXPECTED_COUNT = Number(process.env.EXPECTED_COUNT ?? 0) || null;
 if (!COLLECTION_ID || !COLLECTION_NAME || !TCGCOLLECTOR_URL) {
