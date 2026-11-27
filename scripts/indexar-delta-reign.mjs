@@ -44,7 +44,9 @@ function extractCardDetails(html, collector) {
   const body = $('body').text().replace(/\s+/g, ' ').trim();
   const name = $('h1').first().text().trim();
   if (!name) throw new Error(`Nome não encontrado em ${collector.url}`);
-  const category = /Pokémon/i.test(body) ? 'Pokemon' : (/\bTrainer\b/i.test(body) ? 'Trainer' : (/\bEnergy\b/i.test(body) ? 'Energy' : 'Unknown'));
+  const categoryMatch = body.match(/\\bHP\\s*\\d+\\s*(Pokémon|Trainer|Energy)\\b/i) ?? body.match(/\\b(Trainer|Energy)\\b/i) ?? body.match(/\\bPokémon\\b/i);
+  const categoryLabel = categoryMatch?.[1] ?? categoryMatch?.[0] ?? '';
+  const category = /^Pokémon$/i.test(categoryLabel) ? 'Pokemon' : (/^Trainer$/i.test(categoryLabel) ? 'Trainer' : (/^Energy$/i.test(categoryLabel) ? 'Energy' : 'Unknown'));
   const types = [...new Set($('img[alt]').map((_, el) => $(el).attr('alt')?.trim()).get().filter(x => KNOWN_TYPES.has(x)))];
   const stageMatch = body.match(/\b(Basic|Stage 1|Stage 2|VMAX|VSTAR|V-UNION|MEGA|BREAK)\b/i);
   const stage = stageMatch ? stageMatch[1] : null;
