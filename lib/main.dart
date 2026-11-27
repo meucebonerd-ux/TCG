@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 const String raizColecoes = '/sdcard/meuapp/tcg físico';
@@ -9,8 +10,10 @@ const Set<String> extensoesImagem = {'.jpg', '.jpeg', '.png', '.webp', '.gif'};
 
 final ValueNotifier<bool> modoEscuroGlobal = ValueNotifier<bool>(false);
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final preferencias = await SharedPreferences.getInstance();
+  modoEscuroGlobal.value = preferencias.getBool('modo_escuro') ?? false;
   runApp(const PokemonTcgApp());
 }
 
@@ -472,22 +475,43 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   String _texto(Map<String, dynamic>? dados, String chave) => (dados?[chave] ?? '').toString();
 
   List<String> _tiposDaCarta(Carta carta) {
+    // O índice antigo juntou tipo do Pokémon com custos de energia dos ataques.
+    // O primeiro item corresponde ao tipo principal; os demais não são tipos da carta.
     final value = carta.dados?['types'];
-    if (value is List) return value.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
-    final energy = _texto(carta.dados, 'energyType');
+    if (value is List && value.isNotEmpty) {
+      final principal = value.first.toString().trim();
+      return principal.isEmpty ? <String>[] : <String>[principal];
+    }
+    final energy = _texto(carta.dados, 'energyType').trim();
     return energy.isEmpty ? <String>[] : <String>[energy];
   }
 
+  String _tipoCanonico(String valor) {
+    final normalizado = _normalizarChave(valor);
+    const aliases = {
+      'grama': 'grass', 'planta': 'grass',
+      'fogo': 'fire', 'agua': 'water',
+      'eletrico': 'lightning', 'raios': 'lightning',
+      'psiquico': 'psychic', 'lutador': 'fighting',
+      'sombrio': 'darkness', 'noturno': 'darkness',
+      'metalico': 'metal', 'metal': 'metal',
+      'fada': 'fairy', 'dragao': 'dragon', 'incolor': 'colorless',
+    };
+    return aliases[normalizado] ?? normalizado;
+  }
+
   String _categoriaDaCarta(Carta carta) {
-    final supertype = _texto(carta.dados, 'supertype');
-    final trainer = _texto(carta.dados, 'trainerSubtype');
-    final energy = _texto(carta.dados, 'energyCategory');
-    if (supertype.toLowerCase() == 'trainer' && trainer.isNotEmpty) return 'Trainer • $trainer';
-    if (supertype.toLowerCase() == 'energy' && energy.isNotEmpty) return 'Energy • $energy';
-    if (supertype.isNotEmpty) return supertype;
-    if (trainer.isNotEmpty) return 'Trainer • $trainer';
-    if (energy.isNotEmpty) return 'Energy • $energy';
-    return 'Não categorizada';
+    // supertype/trainerSubtype foram gravados incorretamente como Trainer/Stadium
+    // em todas as 27.160 entradas; não usar esses campos até reindexar a origem.
+    final stage = _normalizarChave(_texto(carta.dados, 'stage'));
+    const estagiosPokemon = {
+      'basic', 'stage 1', 'stage 2', 'vmax', 'vstar',
+      'level up', 'break', 'legend', 'v union', 'restored',
+    };
+    final nome = _normalizarChave(carta.nome);
+    if (estagiosPokemon.contains(stage) && !nome.endsWith(' energy')) return 'Pokémon';
+    if (nome.endsWith(' energy')) return 'Energia';
+    return 'Treinador / não identificado';
   }
 
   String _raridadeDaCarta(Carta carta) {
@@ -497,7 +521,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   }
 
   bool _cartaPassaFiltros(Carta carta) {
-    final tipoOk = filtroTipo == 'Todos' || _tiposDaCarta(carta).any((t) => t.toLowerCase() == filtroTipo.toLowerCase());
+    final tipoOk = filtroTipo == 'Todos' || _tiposDaCarta(carta).any((t) => _tipoCanonico(t) == _tipoCanonico(filtroTipo));
     final raridade = _raridadeDaCarta(carta);
     final raridadeOk = filtroRaridade == 'Todas' || (raridade.isNotEmpty && raridade == filtroRaridade);
     final categoriaOk = filtroCategoria == 'Todas' || _categoriaDaCarta(carta) == filtroCategoria;
@@ -678,7 +702,12 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
             valueListenable: modoEscuroGlobal,
             builder: (context, escuro, _) => IconButton(
               tooltip: escuro ? 'Ativar modo claro' : 'Ativar modo escuro',
-              onPressed: () => modoEscuroGlobal.value = !escuro,
+              onPressed: () async {
+                final novoTema = !escuro;
+                modoEscuroGlobal.value = novoTema;
+                final preferencias = await SharedPreferences.getInstance();
+                await preferencias.setBool('modo_escuro', novoTema);
+              },
               icon: Icon(escuro ? Icons.light_mode : Icons.dark_mode)),
           ),
           IconButton(tooltip: 'Atualizar', onPressed: carregarColecoes, icon: const Icon(Icons.refresh)),
@@ -714,6 +743,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                 )
               : selecionada == null
                   ? GridView.builder(
+                      key: const PageStorageKey<String>('catalogo-colecoes'),
                       padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 2,
