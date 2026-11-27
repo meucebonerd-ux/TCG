@@ -272,7 +272,6 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
 
     final indice = await _carregarIndiceCartas();
     final imagensPorNome = <String, File>{};
-    final imagensPorSlug = <String, File>{};
     await for (final item in colecao.pasta.list(recursive: true, followLinks: false)) {
       if (item is! File) continue;
       final nomeArquivo = item.uri.pathSegments.isNotEmpty ? item.uri.pathSegments.last : item.path.split(Platform.pathSeparator).last;
@@ -782,7 +781,6 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         if (slugLocal.isNotEmpty) {
           final chaveSlug = id + '|' + _normalizarChave(slugLocal);
           imagensPorChave[chaveSlug] = item;
-          imagensPorSlug[chaveSlug] = item;
         }
       }
     }
