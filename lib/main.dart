@@ -258,10 +258,20 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
             if (extensoesImagem.contains(extensao)) {
               final nome = ponto > 0 ? nomeArquivo.substring(0, ponto) : nomeArquivo;
               final slug = nomeArquivo.split('__').first;
+              final dadosCarta = indiceCartas['$id|${_normalizarChave(slug)}'];
+
+              // Cada pasta representa um set específico. Não incluir imagens
+              // sem correspondência no índice nem cartas cujo collectionId
+              // pertença a outro set (ex.: Classic dentro do set principal).
+              if (dadosCarta == null ||
+                  dadosCarta['collectionId']?.toString() != id) {
+                continue;
+              }
+
               cartas.add(Carta(
                 nome: nome,
                 arquivo: item,
-                dados: indiceCartas['$id|${_normalizarChave(slug)}'],
+                dados: dadosCarta,
                 collectionName: _nomePasta(pasta).replaceFirst(RegExp(r'^\d+_'), '').replaceAll('_', ' '),
                 collectionId: id,
               ));
