@@ -712,7 +712,13 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
             nomeArquivo.replaceAll(RegExp(r'\([^)]*\)'), ' ').contains(termo);
       }
 
+      // Primeiro verifica se o termo corresponde ao nome/slug de alguma carta.
+      // Uma coleção pode conter o nome de um Pokémon entre parênteses no título
+      // (ex.: "Pokémon TCG Classic (Charizard)") e não deve sequestrar a busca.
+      final existemCartasComEsseNome = !ehBuscaTipo && !ehBuscaNumero &&
+          todasCartas.any(nomeCorresponde);
       final existeColecaoComEsseNome = !ehBuscaTipo && !ehBuscaNumero &&
+          !existemCartasComEsseNome &&
           colecoes.any(
             (colecao) => _normalizarChave(colecao.nome).contains(termo),
           );
