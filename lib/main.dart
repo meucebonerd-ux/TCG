@@ -714,7 +714,6 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       final separador = entry.key.indexOf('|');
       if (separador <= 0) continue;
       final id = entry.key.substring(0, separador);
-      final arquivoNormalizado = entry.key.substring(separador + 1);
       final nomeArquivo = entry.value.uri.pathSegments.last;
       final slugOriginal = nomeArquivo.split('__').first;
       final slugNormalizado = _normalizarChave(slugOriginal);
