@@ -13,9 +13,20 @@ async function getJson(url) {
   return response.json();
 }
 async function getText(url) {
-  const response = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 TCG-Collector-Indexer/1.0', accept: 'text/html' } });
-  if (!response.ok) throw new Error(`HTTP ${response.status} em ${url}`);
-  return response.text();
+  let lastError;
+  for (let attempt = 0; attempt < 7; attempt++) {
+    try {
+      const response = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36', accept: 'text/html' } });
+      if (response.status === 429 || response.status >= 500) throw new Error(`HTTP ${response.status} em ${url}`);
+      if (!response.ok) throw new Error(`HTTP ${response.status} em ${url}`);
+      return await response.text();
+    } catch (error) {
+      lastError = error;
+      if (attempt === 6) break;
+      await sleep(Math.min(30000, 2500 * (2 ** attempt)));
+    }
+  }
+  throw lastError;
 }
 function numericId(value) {
   const match = String(value ?? '').match(/\d+/);
@@ -72,12 +83,12 @@ async function main() {
 
   const details = [];
   const queue = [...collectorCards.entries()];
-  const workers = Array.from({ length: 6 }, async () => {
+  const workers = Array.from({ length: 1 }, async () => {
     while (queue.length) {
       const [localId, collector] = queue.shift();
       const cardHtml = await getText(collector.url);
       details.push({ localId, collector, ...extractCardDetails(cardHtml, { ...collector, localId }) });
-      await sleep(150);
+      await sleep(1200);
     }
   });
   await Promise.all(workers);
