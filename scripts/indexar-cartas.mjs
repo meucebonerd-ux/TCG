@@ -4,6 +4,8 @@ import { GhostClient } from 'ghostfetch';
 import * as cheerio from 'cheerio';
 
 const ROOT='/sdcard/meuapp', OUT=path.join(ROOT,'dados_cartas.json');
+const REPO_OUT=path.join(process.cwd(),'assets/data/dados_cartas.json');
+const TARGET_ID=process.argv.find(x=>x.startsWith('--id='))?.slice(5);
 const REPORT='/sdcard/Download/relatorio_indice_cartas.json';
 const INPUT=path.join(process.cwd(),'tcgcollector_362_ids.txt');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -67,9 +69,11 @@ async function main(){
   try{sets=(await fs.readFile(INPUT,'utf8')).split(/\r?\n/).map(line=>{const p=line.split('\t');return{id:p[0]?.trim(),name:p[1]?.trim(),url:p[2]?.trim()}}).filter(x=>x.id&&/^https?:\/\//i.test(x.url||''))}catch{}
   if(!sets.length)sets=(await readJson(path.join(ROOT,'logos/catalogo.json'),[])).map(x=>({id:String(x.id),name:x.nome,url:x.pagina})).filter(x=>x.id&&x.url);
   sets=[...new Map(sets.map(x=>[x.id,x])).values()];
+  if(TARGET_ID)sets=sets.filter(x=>x.id===TARGET_ID);
   if(!sets.length)throw Error('Não encontrei coleções no catálogo nem em tcgcollector_362_ids.txt');
   await fs.mkdir('/sdcard/Download',{recursive:true});
-  const old=await readJson(OUT,{cards:[]}), index=new Map((old.cards||[]).map(x=>[x.collectionId+'|'+x.slug,x]));
+  const old=await readJson(OUT,await readJson(REPO_OUT,{cards:[]})), index=new Map((old.cards||[]).map(x=>[x.collectionId+'|'+x.slug,x]));
+  const saveIndex=async()=>{const data=JSON.stringify({version:1,generatedAt:new Date().toISOString(),cards:[...index.values()]},null,2);await fs.writeFile(OUT,data);await fs.mkdir(path.dirname(REPO_OUT),{recursive:true});await fs.writeFile(REPO_OUT,data)};
   let setCount=0,cardCount=0,errorCount=0;
   try{
     for(const set of sets){
@@ -95,10 +99,10 @@ async function main(){
           try{record={...parseCard(cheerio.load(await fetchHtml(url)),url),collectionId:String(set.id),collectionName:set.name||folder.name,files:filesForCard};index.set(key,record)}
           catch(e){errorCount++;record=record||{slug,url,collectionId:String(set.id),collectionName:set.name||folder.name,supertype:'Unknown',types:[],files:filesForCard,needsReview:true,error:String(e)};record.files=filesForCard;index.set(key,record)}
         }else{record.files=filesForCard;index.set(key,record)}
-        if(cardCount%20===0){await fs.writeFile(OUT,JSON.stringify({version:1,generatedAt:new Date().toISOString(),cards:[...index.values()]},null,2));console.log('Progresso: '+cardCount+' páginas; '+errorCount+' erros')}
+        if(cardCount%20===0){await saveIndex();console.log('Progresso: '+cardCount+' páginas; '+errorCount+' erros')}
         await sleep(900);
       }
-      await fs.writeFile(OUT,JSON.stringify({version:1,generatedAt:new Date().toISOString(),cards:[...index.values()]},null,2));
+      await saveIndex();
     }
   }finally{try{if(client)await client.destroy()}catch{}}
   const cards=[...index.values()],matched=new Set(cards.flatMap(c=>(c.files||[]).map(f=>c.collectionId+'|'+path.basename(f))));
@@ -110,8 +114,9 @@ async function main(){
   }
   const review=cards.filter(c=>c.needsReview);
   const report={collections:sets.length,collectionPagesRead:setCount,cardPagesFound:cardCount,indexedCards:cards.length,needsReview:review.length,errors:errorCount,imagesWithoutMatch:unmatched.length,unmatchedImages:unmatched.slice(0,500),cardsNeedingReview:review.map(c=>({collectionId:c.collectionId,name:c.name,slug:c.slug,supertype:c.supertype,files:c.files})).slice(0,1000)};
-  await fs.writeFile(OUT,JSON.stringify({version:1,generatedAt:new Date().toISOString(),cards},null,2));
+  const finalIndex=JSON.stringify({version:1,generatedAt:new Date().toISOString(),cards},null,2);
+  await fs.writeFile(OUT,finalIndex);await fs.writeFile(REPO_OUT,finalIndex);
   await fs.writeFile(REPORT,JSON.stringify(report,null,2));
-  console.log('\nÍNDICE GERADO\n'+JSON.stringify(report,null,2)+'\nArquivo: '+OUT+'\nRelatório: '+REPORT);
+  console.log('\nÍNDICE GERADO\n'+JSON.stringify(report,null,2)+'\nArquivo: '+OUT+'\nÍndice do projeto: '+REPO_OUT+'\nRelatório: '+REPORT);
 }
 main().catch(e=>{console.error(e);process.exitCode=1});
