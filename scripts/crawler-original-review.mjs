@@ -34,6 +34,105 @@ const done = new Set(
 
 const failuresFile = path.join(STATE, "falhas.jsonl");
 
+const INDEX_LOCAL = path.join(STATE, "dados_cartas.json");
+const INDEX_ANDROID = "/sdcard/meuapp/dados_cartas.json";
+const normalizeText = value => String(value || "")
+  .normalize("NFD").replace(/[\\u0300-\\u036f]/g, "")
+  .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+let cardIndex = new Map();
+for (const file of [INDEX_LOCAL, INDEX_ANDROID]) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    for (const card of parsed.cards || []) {
+      cardIndex.set(String(card.collectionId) + "|" + card.slug, card);
+    }
+    break;
+  } catch {}
+}
+
+function extractCardMetadata(html, cardUrl, set, filename) {
+  const $ = cheerio.load(html);
+  const body = $("body").text().replace(/\\s+/g, " ").trim();
+  const normalized = normalizeText(body);
+  const slug = safeName(new URL(cardUrl).pathname.split("/").filter(Boolean).pop());
+  const title = $("h1").first().text().trim() ||
+    $('meta[property="og:title"]').attr("content") || $("title").text().trim();
+  const numberMatch = body.match(/\\b(\\d{1,4})\\s*\\/\\s*(\\d{1,4})\\b/);
+  const knownTypes = ["Grass", "Fire", "Water", "Lightning", "Psychic",
+    "Fighting", "Darkness", "Metal", "Fairy", "Dragon", "Colorless"];
+  const types = [];
+  $("[alt], [title], [aria-label], [data-type], img").each((_, el) => {
+    const value = [$(el).attr("alt"), $(el).attr("title"),
+      $(el).attr("aria-label"), $(el).attr("data-type"),
+      $(el).attr("class")].filter(Boolean).join(" ");
+    for (const type of knownTypes) {
+      if (normalizeText(value).includes(normalizeText(type)) && !types.includes(type)) {
+        types.push(type);
+      }
+    }
+  });
+
+  let supertype = "Unknown";
+  if (/\\btrainer\\b/.test(normalized)) supertype = "Trainer";
+  else if (/\\b(basic|special) energy\\b/.test(normalized) || /\\benergy\\b/.test(normalized)) supertype = "Energy";
+  else if (/\\bpokemon\\b/.test(normalized)) supertype = "Pokemon";
+
+  const stageMatch = body.match(/\\b(Basic|Stage\\s*1|Stage\\s*2|Level[- ]?Up|Restored|BREAK|LEGEND|VMAX|VSTAR|V-UNION)\\s*(?:Pok[eé]mon)?\\b/i);
+  const stage = stageMatch ? stageMatch[1].replace(/\\s+/g, " ") : null;
+  const evolvesMatch = body.match(/Evolves\\s+from\\s+([A-Za-z0-9'’ .-]+?)(?=\\s+(?:HP|Pok[eé]mon|Stage|Type|Weakness|Resistance|Retreat|Expansion|Card number|Illustrator)\\b|$)/i);
+  const evolvesFrom = evolvesMatch ? evolvesMatch[1].trim().replace(/[.,;]+$/, "") : null;
+
+  let trainerSubtype = null;
+  if (supertype === "Trainer") {
+    if (/pokemon tool/i.test(body)) trainerSubtype = "Pokemon Tool";
+    else if (/\\bstadium\\b/i.test(body)) trainerSubtype = "Stadium";
+    else if (/\\bsupporter\\b/i.test(body)) trainerSubtype = "Supporter";
+    else if (/\\bitem\\b/i.test(body)) trainerSubtype = "Item";
+  }
+  const energyCategory = supertype === "Energy"
+    ? (/special energy/i.test(body) ? "Special" : (/basic energy/i.test(body) ? "Basic" : "Unknown"))
+    : null;
+
+  const record = {
+    collectionId: String(set.id),
+    collectionName: set.name,
+    slug,
+    url: cardUrl,
+    name: title.split("|")[0].replace(/\\s*-\\s*TCG Collector.*$/i, "").trim(),
+    number: numberMatch ? numberMatch[1] + "/" + numberMatch[2] : null,
+    numberSort: numberMatch ? Number(numberMatch[1]) : null,
+    supertype,
+    types,
+    stage,
+    evolvesFrom,
+    trainerSubtype,
+    energyCategory,
+    energyType: supertype === "Energy" ? (types[0] || null) : null,
+    file: filename || null,
+    needsReview: supertype === "Unknown" ||
+      (supertype === "Pokemon" && (!stage || !types.length)) ||
+      (supertype === "Trainer" && !trainerSubtype) ||
+      (supertype === "Energy" && energyCategory === "Unknown")
+  };
+  return record;
+}
+
+function saveCardIndex() {
+  const payload = JSON.stringify({
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    cards: [...cardIndex.values()]
+  }, null, 2);
+  fs.writeFileSync(INDEX_LOCAL, payload);
+  try {
+    fs.mkdirSync(path.dirname(INDEX_ANDROID), { recursive: true });
+    fs.writeFileSync(INDEX_ANDROID, payload);
+  } catch (error) {
+    console.log("  Índice salvo localmente; pasta Android indisponível: " + error.message);
+  }
+}
+
 let client = new GhostClient({
   browser: "Chrome_131",
   timeout: 45000
@@ -298,6 +397,12 @@ async function processSet(set) {
         const destination = path.join(folder, filename);
 
         const result = await downloadImage(imageUrl, destination);
+
+        const metadata = extractCardMetadata(cardHtml, cardUrl, set, filename);
+        const indexKey = String(set.id) + "|" + metadata.slug;
+        const previous = cardIndex.get(indexKey) || {};
+        cardIndex.set(indexKey, { ...previous, ...metadata });
+        saveCardIndex();
 
         if (result === "ok") {
           downloaded++;
