@@ -1328,3 +1328,5 @@ class CartaDetalheScreen extends StatelessWidget {
     );
   }
 }
+
+// CI: dispara validação da branch da PR sem alterar o comportamento do aplicativo.
