@@ -1122,7 +1122,7 @@ class CartasScreen extends StatelessWidget {
                               maxLines: 3, overflow: TextOverflow.ellipsis,
                               style: Theme.of(context).textTheme.titleSmall),
                             const SizedBox(height: 6),
-                            Text(_texto(carta.dados, 'number'),
+                            Text((carta.dados?['number'] ?? '').toString(),
                               textAlign: TextAlign.center,
                               style: Theme.of(context).textTheme.bodySmall),
                             Text(carta.collectionName, textAlign: TextAlign.center,
