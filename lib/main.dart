@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -138,6 +139,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
 
   Map<String, Map<String, dynamic>>? _indiceCartasCache;
   final Map<String, List<Carta>> _cartasPorColecao = {};
+  List<Carta>? _cartasBuscaGlobalCache;
 
   Future<void> carregarColecoes() async {
     setState(() { carregando = true; erroMsg = ''; });
@@ -633,6 +635,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     // A pesquisa é construída diretamente do índice completo, nunca da lista
     // de pastas/imagens disponíveis no dispositivo.
     final indiceCompleto = await _carregarIndiceCartas();
+    if (_cartasBuscaGlobalCache == null) {
     final colecoesPorId = <String, Colecao>{
       for (final colecao in colecoes) colecao.nome.split('_').first: colecao,
     };
@@ -652,7 +655,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         imagensPorChave['$id|${_normalizarChave(nomeArquivo)}'] = item;
       }
     }
-    final todasCartas = <Carta>[];
+    final cartasPreparadas = <Carta>[];
     for (final entry in indiceCompleto.entries) {
       final dados = entry.value;
       final id = _texto(dados, 'collectionId');
@@ -668,7 +671,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
           ? arquivo
           : (slug.isNotEmpty ? slug : 'carta_sem_imagem');
       final nomeColecao = _texto(dados, 'collectionName').trim();
-      todasCartas.add(Carta(
+      cartasPreparadas.add(Carta(
         nome: nome.isNotEmpty ? nome : (slug.isNotEmpty ? slug : identificadorVisual),
         arquivo: imagem ?? File('/__tcg_missing_image__/$identificadorVisual'),
         dados: dados,
@@ -678,8 +681,14 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         collectionId: id,
       ));
     }
+    _cartasBuscaGlobalCache = cartasPreparadas;
+    }
+    final todasCartas = _cartasBuscaGlobalCache!;
+    final categoriasBusca = todasCartas.map(_categoriaDaCarta).toSet().toList()..sort();
     final controller = TextEditingController();
+    Timer? debounceBusca;
     var categoriaSelecionada = 'Todos';
+    var resultadosAtuais = <Carta>[];
 
     List<Carta> buscar(String texto) {
       final termo = _normalizarChave(texto);
@@ -774,7 +783,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     ) async {
       final termo = controller.text.trim();
       if (termo.isEmpty || resultados.isEmpty) return;
-      Navigator.pop(sheetContext);
+      // Mantém a pesquisa na pilha para que Voltar retorne ao campo de busca.
       await Navigator.push(
         context,
         MaterialPageRoute(
@@ -792,9 +801,8 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       showDragHandle: true,
       builder: (sheetContext) => StatefulBuilder(
         builder: (context, atualizar) {
-          final resultados = buscar(controller.text);
-          final categorias =
-              todasCartas.map(_categoriaDaCarta).toSet().toList()..sort();
+          final resultados = resultadosAtuais;
+          final categorias = categoriasBusca;
           return SafeArea(
             child: Padding(
               padding: EdgeInsets.fromLTRB(
@@ -816,7 +824,12 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                     controller: controller,
                     autofocus: true,
                     textInputAction: TextInputAction.search,
-                    onChanged: (_) => atualizar(() {}),
+                    onChanged: (_) {
+                      debounceBusca?.cancel();
+                      debounceBusca = Timer(const Duration(milliseconds: 300), () {
+                        atualizar(() { resultadosAtuais = buscar(controller.text); });
+                      });
+                    },
                     onSubmitted: (_) => abrirResultados(sheetContext, resultados),
                     decoration: InputDecoration(
                       hintText: 'Nome, número, Pokémon, tipo ou coleção',
@@ -842,9 +855,10 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                     items: ['Todos', ...categorias]
                         .map((v) => DropdownMenuItem(value: v, child: Text(v)))
                         .toList(),
-                    onChanged: (v) => atualizar(
-                      () => categoriaSelecionada = v ?? 'Todos',
-                    ),
+                    onChanged: (v) => atualizar(() {
+                      categoriaSelecionada = v ?? 'Todos';
+                      resultadosAtuais = buscar(controller.text);
+                    }),
                   ),
                   const SizedBox(height: 8),
                   Align(
@@ -935,6 +949,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         },
       ),
     );
+    debounceBusca?.cancel();
     controller.dispose();
   }
 
