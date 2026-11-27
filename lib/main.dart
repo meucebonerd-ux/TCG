@@ -771,9 +771,9 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                             crossAxisSpacing: 8,
                             mainAxisSpacing: 8,
                           ),
-                          itemCount: selecionada.cartas.length,
+                          itemCount: cartasExibidas.length,
                           itemBuilder: (context, index) {
-                            final carta = selecionada.cartas[index];
+                            final carta = cartasExibidas[index];
                             return InkWell(
                               onTap: () => Navigator.push(
                                 context,
