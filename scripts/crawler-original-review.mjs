@@ -453,7 +453,77 @@ async function processSet(set) {
   }
 }
 
+async function indexExistingCollections() {
+  const folders = fs.readdirSync(OUTPUT, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && entry.name !== "estado");
+  let processed = 0;
+  let errors = 0;
+
+  for (const folderEntry of folders) {
+    const folder = path.join(OUTPUT, folderEntry.name);
+    const manifest = path.join(folder, "cartas.json");
+    if (!fs.existsSync(manifest)) continue;
+
+    let data;
+    try { data = JSON.parse(fs.readFileSync(manifest, "utf8")); }
+    catch (error) {
+      console.log("Manifesto inválido: " + manifest + " — " + error.message);
+      errors++;
+      continue;
+    }
+
+    const set = { id: String(data.id || folderEntry.name.split("_")[0]), name: data.name || folderEntry.name };
+    const urls = Array.isArray(data.cards) ? data.cards : [];
+    const files = fs.readdirSync(folder);
+    console.log("\\nINDEXANDO " + set.name + " (" + urls.length + " cartas)");
+
+    for (let i = 0; i < urls.length; i++) {
+      const cardUrl = urls[i];
+      try {
+        const slug = safeName(new URL(cardUrl).pathname.split("/").filter(Boolean).pop());
+        const filename = files.find(name => name.startsWith(slug + "__")) || null;
+        const html = await getHtml(cardUrl);
+        const metadata = extractCardMetadata(html, cardUrl, set, filename);
+        cardIndex.set(set.id + "|" + slug, metadata);
+        processed++;
+        if (processed % 10 === 0) {
+          saveCardIndex();
+          console.log("  Metadados processados: " + processed);
+        }
+      } catch (error) {
+        errors++;
+        console.log("  ERRO " + cardUrl + ": " + error.message);
+      }
+      await sleep(WAIT);
+    }
+    saveCardIndex();
+  }
+
+  saveCardIndex();
+  const cards = [...cardIndex.values()];
+  const report = {
+    generatedAt: new Date().toISOString(),
+    collections: folders.length,
+    indexedCards: cards.length,
+    processedThisRun: processed,
+    needsReview: cards.filter(card => card.needsReview).length,
+    errors
+  };
+  const reportPath = path.join(STATE, "relatorio_indice_cartas.json");
+  fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
+  console.log("\\nÍNDICE FINALIZADO");
+  console.log(JSON.stringify(report, null, 2));
+  console.log("Índice: " + INDEX_ANDROID);
+  console.log("Cópia local: " + INDEX_LOCAL);
+}
+
 async function main() {
+  if (process.argv.includes("--index-existing")) {
+    try { await indexExistingCollections(); }
+    finally { await client.destroy(); }
+    return;
+  }
+
   const limitArg = process.argv.find(arg => arg.startsWith("--limit="));
   const limit = limitArg
     ? Number(limitArg.split("=")[1])
