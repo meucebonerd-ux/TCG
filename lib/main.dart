@@ -339,26 +339,28 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       .trim();
 
   void _ordenarCartas(List<Carta> cartas) {
-    int numero(Carta carta) {
-      final direto = carta.dados?['numberSort'];
-      if (direto is num) return direto.toInt();
-      final bruto = _texto(carta.dados, 'number');
-      final match = RegExp(r'\\d+').firstMatch(bruto);
-      return match == null ? 999999 : int.tryParse(match.group(0)!) ?? 999999;
-    }
-
-    String complementoNumero(Carta carta) {
-      final bruto = _texto(carta.dados, 'number').toLowerCase().trim();
-      return bruto.replaceFirst(RegExp(r'^\\D*\\d+'), '').trim();
+    ({String prefixo, int numero, String sufixo}) chaveNumero(Carta carta) {
+      final bruto = _texto(carta.dados, 'number').toUpperCase().trim();
+      final match = RegExp(r'^(\D*)(\d+)(.*)$').firstMatch(bruto);
+      if (match == null) return (prefixo: bruto, numero: 999999, sufixo: '');
+      return (
+        prefixo: match.group(1)!.trim(),
+        numero: int.tryParse(match.group(2)!) ?? 999999,
+        sufixo: match.group(3)!.trim(),
+      );
     }
 
     cartas.sort((a, b) {
-      final porNumero = numero(a).compareTo(numero(b));
-      if (porNumero != 0) return porNumero;
-      final porComplemento = complementoNumero(a).compareTo(complementoNumero(b));
-      if (porComplemento != 0) return porComplemento;
-      final porNome = a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
-      if (porNome != 0) return porNome;
+      final ka = chaveNumero(a);
+      final kb = chaveNumero(b);
+      final prefixo = ka.prefixo.compareTo(kb.prefixo);
+      if (prefixo != 0) return prefixo;
+      final numero = ka.numero.compareTo(kb.numero);
+      if (numero != 0) return numero;
+      final sufixo = ka.sufixo.compareTo(kb.sufixo);
+      if (sufixo != 0) return sufixo;
+      final nome = a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
+      if (nome != 0) return nome;
       return _texto(a.dados, 'slug').compareTo(_texto(b.dados, 'slug'));
     });
   }
@@ -645,12 +647,15 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     final controller = TextEditingController();
     Timer? debounceBusca;
     var categoriaSelecionada = 'Todos';
+    var ordemBusca = 'recentes';
+    final preferenciasBusca = await SharedPreferences.getInstance();
+    ordemBusca = preferenciasBusca.getString('ordem_busca_global') ?? 'recentes';
     var resultadosAtuais = <Carta>[];
 
     final nomesPesquisa = <Carta, String>{
       for (final carta in todasCartas)
         carta: _normalizarChave(
-          _texto(carta.dados, 'name').replaceAll(RegExp(r'\\([^)]*\\)'), ' '),
+          _texto(carta.dados, 'name').replaceAll(RegExp(r'\([^)]*\\)'), ' '),
         ),
     };
     final ordemColecao = <String, int>{
@@ -730,8 +735,11 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       resultados.sort((a, b) {
         final nomeA = _normalizarChave(a.collectionName);
         final nomeB = _normalizarChave(b.collectionName);
-        final lancamento = (ordemColecao[nomeA] ?? 999999)
-            .compareTo(ordemColecao[nomeB] ?? 999999);
+        final indiceA = ordemColecao[nomeA] ?? 999999;
+        final indiceB = ordemColecao[nomeB] ?? 999999;
+        final lancamento = ordemBusca == 'recentes'
+            ? indiceB.compareTo(indiceA)
+            : indiceA.compareTo(indiceB);
         if (lancamento != 0) return lancamento;
         final numero = (numerosPesquisa[a] ?? 999999)
             .compareTo(numerosPesquisa[b] ?? 999999);
@@ -826,6 +834,26 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                       categoriaSelecionada = v ?? 'Todos';
                       resultadosAtuais = buscar(controller.text);
                     }),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: ordemBusca,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Ordem de lançamento',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'recentes', child: Text('Mais recentes primeiro')),
+                      DropdownMenuItem(value: 'antigos', child: Text('Mais antigos primeiro')),
+                    ],
+                    onChanged: (v) async {
+                      final novaOrdem = v ?? 'recentes';
+                      ordemBusca = novaOrdem;
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setString('ordem_busca_global', novaOrdem);
+                      atualizar(() { resultadosAtuais = buscar(controller.text); });
+                    },
                   ),
                   const SizedBox(height: 8),
                   Align(
