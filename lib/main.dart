@@ -546,6 +546,11 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
               if (raridades.isEmpty)
                 const Padding(padding: EdgeInsets.only(top: 4), child: Text('O índice atual não possui dados de raridade; esse filtro será ativado quando o campo estiver disponível.', style: TextStyle(fontSize: 12))),
               const SizedBox(height: 12),
+              if (categorias.length == 1 && categorias.first == 'Trainer • Stadium')
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text('A categoria do índice está inconsistente: todas as cartas aparecem como Trainer • Stadium. O filtro será confiável após corrigirmos esses metadados.', style: TextStyle(fontSize: 12)),
+                ),
               DropdownButtonFormField<String>(
                 value: categoria, isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Categoria', border: OutlineInputBorder()),
