@@ -1109,8 +1109,28 @@ class CartasScreen extends StatelessWidget {
                     child: Image.file(
                       carta.arquivo,
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) =>
-                          const Icon(Icons.broken_image, size: 42),
+                      errorBuilder: (_, __, ___) => Container(
+                        width: double.infinity,
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.image_not_supported_outlined, size: 34),
+                            const SizedBox(height: 10),
+                            Text(carta.nome, textAlign: TextAlign.center,
+                              maxLines: 3, overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleSmall),
+                            const SizedBox(height: 6),
+                            Text(_texto(carta.dados, 'number'),
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodySmall),
+                            Text(carta.collectionName, textAlign: TextAlign.center,
+                              maxLines: 2, overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 );
