@@ -203,8 +203,15 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         final dados = Map<String, dynamic>.from(item);
         final id = dados['collectionId']?.toString();
         final arquivo = _arquivoDaCarta(dados);
-        if (id != null && id.isNotEmpty && arquivo.isNotEmpty) {
-          resultado['$id|${_normalizarChave(arquivo)}'] = dados;
+        final slug = _texto(dados, 'slug').trim();
+        final nome = _texto(dados, 'name').trim();
+        final identificador = slug.isNotEmpty
+            ? slug
+            : (arquivo.isNotEmpty ? arquivo : nome);
+        // O índice de pesquisa não pode depender da existência de imagem local.
+        // Cartas sem arquivo correspondente também precisam estar disponíveis.
+        if (id != null && id.isNotEmpty && identificador.isNotEmpty) {
+          resultado['$id|${_normalizarChave(identificador)}'] = dados;
         }
       }
     }
@@ -650,14 +657,20 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       final dados = entry.value;
       final id = _texto(dados, 'collectionId');
       final arquivo = _arquivoDaCarta(dados);
-      if (id.isEmpty || arquivo.isEmpty) continue;
-      final imagem = imagensPorChave['$id|${_normalizarChave(arquivo)}'];
+      if (id.isEmpty) continue;
+      final imagem = arquivo.isEmpty
+          ? null
+          : imagensPorChave['$id|${_normalizarChave(arquivo)}'];
       final colecao = colecoesPorId[id];
       final nome = _texto(dados, 'name').trim();
+      final slug = _texto(dados, 'slug').trim();
+      final identificadorVisual = arquivo.isNotEmpty
+          ? arquivo
+          : (slug.isNotEmpty ? slug : 'carta_sem_imagem');
       final nomeColecao = _texto(dados, 'collectionName').trim();
       todasCartas.add(Carta(
-        nome: nome.isNotEmpty ? nome : arquivo,
-        arquivo: imagem ?? File('/__tcg_missing_image__/$arquivo'),
+        nome: nome.isNotEmpty ? nome : (slug.isNotEmpty ? slug : identificadorVisual),
+        arquivo: imagem ?? File('/__tcg_missing_image__/$identificadorVisual'),
         dados: dados,
         collectionName: nomeColecao.isNotEmpty
             ? nomeColecao
