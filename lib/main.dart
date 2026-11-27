@@ -566,34 +566,38 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   String _categoriaDaCarta(Carta carta) {
     final dados = carta.dados ?? const <String, dynamic>{};
     final supertype = _normalizarChave(_texto(dados, 'supertype'));
-    // O supertype é o dado explícito do índice e deve prevalecer sobre
-    // heurísticas baseadas em stage/evolvesFrom, sobretudo em coleções antigas.
-    if (supertype == 'pokemon' || supertype == 'pokémon') return 'Pokémon';
-    if (supertype == 'trainer' || supertype == 'treinador') {
-      return 'Treinador / não identificado';
-    }
-    if (supertype == 'energy' || supertype == 'energia') return 'Energia';
-
     final energyType = _texto(dados, 'energyType').trim();
     final energyCategory = _texto(dados, 'energyCategory').trim();
     final nome = _normalizarChave(
       _texto(dados, 'name').trim().isNotEmpty ? _texto(dados, 'name') : carta.nome,
     );
-    if (energyType.isNotEmpty || energyCategory.isNotEmpty ||
-        nome.endsWith(' energy') || nome.endsWith(' energia')) {
+    final types = dados['types'];
+    final temTipo = types is List &&
+        types.any((item) => item.toString().trim().isNotEmpty);
+
+    // Alguns índices antigos marcaram todas as cartas como Trainer/Stadium.
+    // Neles, Pokémon e Energias ainda conservam o tipo impresso; use esses
+    // sinais para corrigir a categoria sem reclassificar Trainers sem tipo.
+    final pareceEnergia = energyType.isNotEmpty || energyCategory.isNotEmpty ||
+        nome.endsWith(' energy') || nome.endsWith(' energia');
+    if (supertype == 'energy' || supertype == 'energia' || pareceEnergia) {
       return 'Energia';
     }
+    if (supertype == 'pokemon' || supertype == 'pokémon') return 'Pokémon';
+    if ((supertype == 'trainer' || supertype == 'treinador') && temTipo) {
+      return 'Pokémon';
+    }
+    if (supertype == 'trainer' || supertype == 'treinador') {
+      return 'Treinador / não identificado';
+    }
 
-    final types = dados['types'];
-    final temTipoPokemon = types is List &&
-        types.any((item) => item.toString().trim().isNotEmpty);
     final stage = _normalizarChave(_texto(dados, 'stage'));
     const estagiosPokemon = {
       'basic', 'stage 1', 'stage 2', 'vmax', 'vstar',
       'level up', 'break', 'legend', 'v union', 'restored',
     };
     final temEvolucaoPokemon = _texto(dados, 'evolvesFrom').trim().isNotEmpty;
-    if (temTipoPokemon || estagiosPokemon.contains(stage) || temEvolucaoPokemon) {
+    if (temTipo || estagiosPokemon.contains(stage) || temEvolucaoPokemon) {
       return 'Pokémon';
     }
     return 'Treinador / não identificado';
