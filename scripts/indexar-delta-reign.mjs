@@ -1,9 +1,14 @@
 import fs from 'node:fs/promises';
 import * as cheerio from 'cheerio';
 
-const COLLECTION_ID = '111247';
-const COLLECTION_NAME = 'Delta Reign';
-const TCGCOLLECTOR_URL = 'https://www.tcgcollector.com/sets/111247/delta-reign?setCardCountMode=anyCardVariant';
+const COLLECTION_ID = String(process.env.COLLECTION_ID ?? '').trim();
+const COLLECTION_NAME = String(process.env.COLLECTION_NAME ?? '').trim();
+const COLLECTION_SLUG = String(process.env.COLLECTION_SLUG ?? COLLECTION_NAME.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')).trim();
+const TCGCOLLECTOR_URL = String(process.env.TCGCOLLECTOR_URL ?? (COLLECTION_ID && COLLECTION_SLUG ? `https://www.tcgcollector.com/sets/${COLLECTION_ID}/${COLLECTION_SLUG}?setCardCountMode=anyCardVariant` : '')).trim();
+const EXPECTED_COUNT = Number(process.env.EXPECTED_COUNT ?? 0) || null;
+if (!COLLECTION_ID || !COLLECTION_NAME || !TCGCOLLECTOR_URL) {
+  throw new Error('Informe COLLECTION_ID, COLLECTION_NAME e, opcionalmente, COLLECTION_SLUG/TCGCOLLECTOR_URL.');
+}
 const OUTPUT = 'assets/data/dados_cartas.json';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -77,8 +82,9 @@ function extractCardDetails(html, collector) {
 async function main() {
   const html = await getText(TCGCOLLECTOR_URL);
   const collectorCards = extractCollectorCards(html);
-  if (collectorCards.size !== 141) {
-    throw new Error(`TCG Collector retornou ${collectorCards.size} links numerados; esperado 141. Índice não será alterado.`);
+  if (!collectorCards.size) throw new Error('Nenhuma carta numerada foi encontrada na página do TCG Collector.');
+  if (EXPECTED_COUNT && collectorCards.size !== EXPECTED_COUNT) {
+    throw new Error(`TCG Collector retornou ${collectorCards.size} cartas; esperado ${EXPECTED_COUNT}. Índice não será alterado.`);
   }
 
   const details = [];
@@ -92,7 +98,7 @@ async function main() {
     }
   });
   await Promise.all(workers);
-  if (details.length !== 141) throw new Error(`Foram extraídas ${details.length} cartas; esperado 141.`);
+  if (details.length !== collectorCards.size) throw new Error(`Foram extraídas ${details.length} cartas; esperado ${collectorCards.size}.`);
 
   const records = [];
   for (const card of details) {
@@ -103,7 +109,7 @@ async function main() {
       slug: card.collector.slug,
       url: card.collector.url,
       name: card.name,
-      number: `${String(card.number).padStart(3, '0')}/103`,
+      number: `${String(card.number).padStart(3, '0')}/${card.total ?? Math.max(...details.map(x => x.total ?? x.number))}`,
       numberSort: card.number,
       supertype: card.category,
       types: card.types,
@@ -119,13 +125,19 @@ async function main() {
     });
   }
   records.sort((a, b) => a.numberSort - b.numberSort);
-  if (records.length !== 141 || new Set(records.map(x => x.numberSort)).size !== 141) {
+  if (records.length !== collectorCards.size || new Set(records.map(x => x.numberSort)).size !== records.length) {
     throw new Error('A validação de unicidade/quantidade falhou. Índice não será alterado.');
   }
 
   let previous = { version: 1, cards: [] };
-  try { previous = JSON.parse(await fs.readFile(OUTPUT, 'utf8')); } catch {}
-  const kept = (previous.cards ?? []).filter(card => String(card.collectionId) !== COLLECTION_ID);
+  try {
+    const raw = await fs.readFile(OUTPUT, 'utf8');
+    previous = JSON.parse(raw);
+    if (!previous || !Array.isArray(previous.cards)) throw new Error('Estrutura de dados_cartas.json inválida.');
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw new Error(`Não foi possível ler o índice existente; nenhum dado será sobrescrito: ${error.message}`);
+  }
+  const kept = previous.cards.filter(card => String(card.collectionId) !== COLLECTION_ID);
   const merged = [...kept, ...records];
   await fs.writeFile(OUTPUT, JSON.stringify({
     version: 1,
