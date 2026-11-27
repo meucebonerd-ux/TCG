@@ -484,7 +484,12 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       ),
     );
     controller.dispose();
-    if (selecionada != null && mounted) setState(() => colecaoSelecionada = selecionada);
+    if (selecionada != null && mounted) {
+      _catalogoScrollOffset = _catalogoScrollController.hasClients
+          ? _catalogoScrollController.offset
+          : _catalogoScrollOffset;
+      setState(() => colecaoSelecionada = selecionada);
+    }
   }
 
 
