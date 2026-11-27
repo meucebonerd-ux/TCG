@@ -207,18 +207,56 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   Future<List<Carta>> _carregarCartasDaColecao(Colecao colecao) async {
     final id = colecao.nome.split('_').first;
     if (_cartasPorColecao.containsKey(id)) return _cartasPorColecao[id]!;
-    final indice = await _carregarIndiceCartas(); final cartas = <Carta>[];
-    final nomeColecao = colecao.nome.replaceFirst(RegExp(r'^\d+_'), '').replaceAll('_', ' ');
-    await for (final item in colecao.pasta.list(recursive: true, followLinks: false)) {
+
+    final indice = await _carregarIndiceCartas();
+    final imagensPorNome = <String, File>{};
+
+    // As imagens são opcionais: a ausência de um arquivo não pode remover
+    // uma carta do catálogo nem da pesquisa global.
+    await for (final item
+        in colecao.pasta.list(recursive: true, followLinks: false)) {
       if (item is! File) continue;
-      final nomeArquivo = item.uri.pathSegments.isNotEmpty ? item.uri.pathSegments.last : item.path.split(Platform.pathSeparator).last;
-      final ponto = nomeArquivo.lastIndexOf('.'); final ext = ponto >= 0 ? nomeArquivo.substring(ponto).toLowerCase() : '';
+      final nomeArquivo = item.uri.pathSegments.isNotEmpty
+          ? item.uri.pathSegments.last
+          : item.path.split(Platform.pathSeparator).last;
+      final ponto = nomeArquivo.lastIndexOf('.');
+      final ext = ponto >= 0
+          ? nomeArquivo.substring(ponto).toLowerCase()
+          : '';
       if (!extensoesImagem.contains(ext)) continue;
-      final dados = indice['$id|${_normalizarChave(nomeArquivo)}'];
-      if (dados == null || dados['collectionId']?.toString() != id || _normalizarChave(dados['file']?.toString() ?? '') != _normalizarChave(nomeArquivo)) continue;
-      cartas.add(Carta(nome: ponto > 0 ? nomeArquivo.substring(0, ponto) : nomeArquivo, arquivo: item, dados: dados, collectionName: nomeColecao, collectionId: id));
+      imagensPorNome[_normalizarChave(nomeArquivo)] = item;
     }
-    _ordenarCartas(cartas); _cartasPorColecao[id] = cartas; return cartas;
+
+    final cartas = <Carta>[];
+    for (final entry in indice.entries) {
+      if (!entry.key.startsWith('$id|')) continue;
+      final dados = entry.value;
+      if (dados['collectionId']?.toString() != id) continue;
+
+      final nomeArquivo = _texto(dados, 'file').trim();
+      if (nomeArquivo.isEmpty) continue;
+      final imagem = imagensPorNome[_normalizarChave(nomeArquivo)];
+      final nomeDados = _texto(dados, 'name').trim();
+      final nomeSemExtensao = nomeArquivo.contains('.')
+          ? nomeArquivo.substring(0, nomeArquivo.lastIndexOf('.'))
+          : nomeArquivo;
+
+      cartas.add(Carta(
+        nome: nomeDados.isNotEmpty ? nomeDados : nomeSemExtensao,
+        // Caminho inexistente intencional: Image.file usa errorBuilder para
+        // mostrar o marcador de imagem ausente sem excluir os dados da carta.
+        arquivo: imagem ?? File('/__tcg_missing_image__/$nomeArquivo'),
+        dados: dados,
+        collectionName: _texto(dados, 'collectionName').isNotEmpty
+            ? _texto(dados, 'collectionName')
+            : colecao.nome.replaceFirst(RegExp(r'^\d+_'), '').replaceAll('_', ' '),
+        collectionId: id,
+      ));
+    }
+
+    _ordenarCartas(cartas);
+    _cartasPorColecao[id] = cartas;
+    return cartas;
   }
 
   Future<void> _abrirColecao(Colecao colecao) async {
