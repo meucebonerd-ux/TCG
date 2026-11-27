@@ -363,37 +363,119 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
       .trim();
 
+  int _ordemTipoPokemon(Carta carta) {
+    const ordem = <String, int>{
+      'grass': 0, 'fire': 1, 'water': 2, 'lightning': 3,
+      'psychic': 4, 'fighting': 5, 'darkness': 6, 'metal': 7,
+      'fairy': 8, 'dragon': 9, 'colorless': 10,
+    };
+    final tipos = _tiposDaCarta(carta);
+    if (tipos.isEmpty) return 99;
+    return ordem[_tipoCanonico(tipos.first)] ?? 99;
+  }
+
+  String _textoCampos(Map<String, dynamic>? dados, List<String> chaves) {
+    if (dados == null) return '';
+    final partes = <String>[];
+    for (final chave in chaves) {
+      final valor = dados[chave];
+      if (valor is List) {
+        partes.addAll(valor.map((e) => e.toString()));
+      } else if (valor != null) {
+        partes.add(valor.toString());
+      }
+    }
+    return _normalizarChave(partes.join(' '));
+  }
+
+  int _ordemTreinador(Carta carta) {
+    final dados = carta.dados;
+    final subtipo = _textoCampos(dados, [
+      'trainerSubtype', 'trainerType', 'subtype', 'subtypes',
+      'cardType', 'category',
+    ]);
+    if (subtipo.contains('stadium') || subtipo.contains('estadio')) return 1;
+    if (subtipo.contains('supporter') || subtipo.contains('apoiador')) return 2;
+    if (subtipo.contains('pokemon tool') ||
+        subtipo.contains('tool') ||
+        subtipo.contains('ferramenta')) return 3;
+    if (subtipo.contains('item') || subtipo.contains('item')) return 0;
+    // Em índices antigos, cartas de Treinador sem subtipo explícito
+    // são tratadas como Itens para não misturá-las aos demais grupos.
+    return 0;
+  }
+
+  bool _ehEnergiaBasica(Carta carta) {
+    final dados = carta.dados;
+    final categoria = _textoCampos(dados, ['energyCategory', 'energyType', 'subtypes']);
+    final nome = _normalizarChave(carta.nome);
+    if (categoria.contains('special') || categoria.contains('especial')) return false;
+    if (categoria.contains('basic') || categoria.contains('basica')) return true;
+    if (nome.contains('special energy') || nome.contains('energia especial')) return false;
+    if (nome.contains('basic energy') || nome.contains('energia basica')) return true;
+    return false;
+  }
+
+  int _ordemEnergia(Carta carta) {
+    if (!_ehEnergiaBasica(carta)) return 100;
+    final energia = _texto(carta.dados, 'energyType').trim();
+    final nome = _normalizarChave(carta.nome);
+    final tipo = _tipoCanonico(energia.isNotEmpty ? energia : nome
+        .replaceAll(' basic energy', '')
+        .replaceAll(' energy', '')
+        .replaceAll(' energia basica', '')
+        .replaceAll(' energia', ''));
+    const ordem = <String, int>{
+      'grass': 0, 'fire': 1, 'water': 2, 'lightning': 3,
+      'psychic': 4, 'fighting': 5, 'darkness': 6, 'metal': 7,
+      'fairy': 8, 'dragon': 9, 'colorless': 10,
+    };
+    return ordem[tipo] ?? 99;
+  }
+
+  String _chaveAlfabetica(Carta carta) {
+    final nome = _normalizarChave(carta.nome);
+    return nome;
+  }
+
   void _ordenarCartas(List<Carta> cartas) {
-    // Prioriza o número oficial; usa numberSort apenas como fallback.
-    String chave(Carta carta) {
-      final oficial = _texto(carta.dados, 'number').trim().toUpperCase();
-      if (oficial.isNotEmpty) return oficial;
-      final slug = _texto(carta.dados, 'slug').trim().toUpperCase();
-      final matches = RegExp(r'-(\d{1,4})-(\d{1,4})(?:$|-)').allMatches(slug).toList();
-      if (matches.isNotEmpty) return '${matches.last.group(1)}/${matches.last.group(2)}';
-      final fallback = carta.dados?['numberSort'];
-      return fallback is num ? fallback.toInt().toString() : '';
+    int grupo(Carta carta) {
+      final categoria = _categoriaDaCarta(carta);
+      if (categoria == 'Pokémon') return 0;
+      if (categoria == 'Treinador / não identificado') return 1;
+      if (categoria == 'Energia') return 2;
+      return 3;
     }
-    String prefixo(String s) => (RegExp(r'^[^0-9]*').firstMatch(s)?.group(0) ?? '').trim();
-    int numero(String s) {
-      final m = RegExp(r'\d+').firstMatch(s);
-      return m == null ? 999999 : int.tryParse(m.group(0)!) ?? 999999;
-    }
-    String sufixo(String s) {
-      final m = RegExp(r'^[^0-9]*\d+(.*)$').firstMatch(s);
-      return (m?.group(1) ?? '').trim().toUpperCase();
-    }
+
     cartas.sort((a, b) {
-      final ka = chave(a), kb = chave(b);
-      final p = prefixo(ka).compareTo(prefixo(kb));
-      if (p != 0) return p;
-      final n = numero(ka).compareTo(numero(kb));
-      if (n != 0) return n;
-      final s = sufixo(ka).compareTo(sufixo(kb));
-      if (s != 0) return s;
-      final nome = a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
-      if (nome != 0) return nome;
-      return _texto(a.dados, 'slug').compareTo(_texto(b.dados, 'slug'));
+      final ga = grupo(a), gb = grupo(b);
+      if (ga != gb) return ga.compareTo(gb);
+
+      if (ga == 0) {
+        final tipo = _ordemTipoPokemon(a).compareTo(_ordemTipoPokemon(b));
+        if (tipo != 0) return tipo;
+        final nome = _chaveAlfabetica(a).compareTo(_chaveAlfabetica(b));
+        if (nome != 0) return nome;
+      } else if (ga == 1) {
+        final sub = _ordemTreinador(a).compareTo(_ordemTreinador(b));
+        if (sub != 0) return sub;
+        final nome = _chaveAlfabetica(a).compareTo(_chaveAlfabetica(b));
+        if (nome != 0) return nome;
+      } else if (ga == 2) {
+        final basicaA = _ehEnergiaBasica(a) ? 0 : 1;
+        final basicaB = _ehEnergiaBasica(b) ? 0 : 1;
+        if (basicaA != basicaB) return basicaA.compareTo(basicaB);
+        if (basicaA == 0) {
+          final tipo = _ordemEnergia(a).compareTo(_ordemEnergia(b));
+          if (tipo != 0) return tipo;
+        }
+        final nome = _chaveAlfabetica(a).compareTo(_chaveAlfabetica(b));
+        if (nome != 0) return nome;
+      }
+
+      final slugA = _texto(a.dados, 'slug');
+      final slugB = _texto(b.dados, 'slug');
+      return slugA.compareTo(slugB);
     });
   }
   String _nomeExibicao(Colecao item) =>
