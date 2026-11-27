@@ -657,58 +657,186 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     final todasCartas = colecoes.expand((c) => c.cartas).toList();
     final controller = TextEditingController();
     var categoriaSelecionada = 'Todos';
+
+    List<Carta> buscar(String texto) {
+      final termo = _normalizarChave(texto);
+      return todasCartas.where((carta) {
+        if (categoriaSelecionada != 'Todos' &&
+            _categoriaDaCarta(carta) != categoriaSelecionada) return false;
+        if (termo.isEmpty) return false;
+        final campos = [
+          carta.nome,
+          _texto(carta.dados, 'name'),
+          _texto(carta.dados, 'number'),
+          _texto(carta.dados, 'pokemon'),
+          _texto(carta.dados, 'collectionName'),
+          carta.collectionName,
+          ..._tiposDaCarta(carta),
+        ];
+        return campos.any((campo) => _normalizarChave(campo).contains(termo));
+      }).toList();
+    }
+
+    Future<void> abrirResultados(
+      BuildContext sheetContext,
+      List<Carta> resultados,
+    ) async {
+      final termo = controller.text.trim();
+      if (termo.isEmpty || resultados.isEmpty) return;
+      Navigator.pop(sheetContext);
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => BuscaGlobalResultadosScreen(
+            termo: termo,
+            cartas: resultados,
+          ),
+        ),
+      );
+    }
+
     await showModalBottomSheet<void>(
-      context: context, isScrollControlled: true, showDragHandle: true,
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
       builder: (sheetContext) => StatefulBuilder(
         builder: (context, atualizar) {
-          final termo = _normalizarChave(controller.text);
-          final categorias = todasCartas.map(_categoriaDaCarta).toSet().toList()..sort();
-          final resultados = todasCartas.where((carta) {
-            if (categoriaSelecionada != 'Todos' && _categoriaDaCarta(carta) != categoriaSelecionada) return false;
-            if (termo.isEmpty) return true;
-            final campos = [carta.nome, _texto(carta.dados, 'name'), _texto(carta.dados, 'number'),
-              _texto(carta.dados, 'pokemon'), _texto(carta.dados, 'collectionName'), carta.collectionName,
-              ..._tiposDaCarta(carta)];
-            return campos.any((campo) => _normalizarChave(campo).contains(termo));
-          }).take(250).toList();
+          final resultados = buscar(controller.text);
+          final categorias =
+              todasCartas.map(_categoriaDaCarta).toSet().toList()..sort();
           return SafeArea(
             child: Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.of(sheetContext).viewInsets.bottom + 16),
-              child: SizedBox(height: MediaQuery.of(sheetContext).size.height * .82,
+              padding: EdgeInsets.fromLTRB(
+                16, 8, 16,
+                MediaQuery.of(sheetContext).viewInsets.bottom + 16,
+              ),
+              child: SizedBox(
+                height: MediaQuery.of(sheetContext).size.height * .82,
                 child: Column(children: [
-                  const Align(alignment: Alignment.centerLeft, child: Text('Pesquisa global de cartas', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600))),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Pesquisa global de cartas',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                    ),
+                  ),
                   const SizedBox(height: 12),
-                  TextField(controller: controller, autofocus: true, onChanged: (_) => atualizar(() {}),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    textInputAction: TextInputAction.search,
+                    onChanged: (_) => atualizar(() {}),
+                    onSubmitted: (_) => abrirResultados(sheetContext, resultados),
                     decoration: InputDecoration(
                       hintText: 'Nome, número, Pokémon, tipo ou coleção',
                       prefixIcon: const Icon(Icons.search),
-                      suffixIcon: controller.text.isEmpty ? null : IconButton(icon: const Icon(Icons.clear), onPressed: () { controller.clear(); atualizar(() {}); }),
-                      border: const OutlineInputBorder())),
+                      suffixIcon: controller.text.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: 'Mostrar resultados',
+                              icon: const Icon(Icons.arrow_forward),
+                              onPressed: () => abrirResultados(sheetContext, resultados),
+                            ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
-                    value: categoriaSelecionada, isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Categoria', border: OutlineInputBorder()),
-                    items: ['Todos', ...categorias].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
-                    onChanged: (v) => atualizar(() => categoriaSelecionada = v ?? 'Todos')),
+                    value: categoriaSelecionada,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Categoria',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: ['Todos', ...categorias]
+                        .map((v) => DropdownMenuItem(value: v, child: Text(v)))
+                        .toList(),
+                    onChanged: (v) => atualizar(
+                      () => categoriaSelecionada = v ?? 'Todos',
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  Align(alignment: Alignment.centerLeft, child: Text('${resultados.length}${resultados.length == 250 ? '+' : ''} resultados', style: Theme.of(context).textTheme.bodySmall)),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      controller.text.trim().isEmpty
+                          ? 'Digite para ver sugestões'
+                          : '${resultados.length} cartas encontradas',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Expanded(child: resultados.isEmpty ? const Center(child: Text('Nenhuma carta encontrada.')) :
-                    ListView.separated(itemCount: resultados.length, separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final carta = resultados[index];
-                        final numero = _texto(carta.dados, 'number');
-                        final tipos = _tiposDaCarta(carta).join(' • ');
-                        return ListTile(
-                          leading: SizedBox(width: 48, height: 64, child: Image.file(carta.arquivo, fit: BoxFit.contain,
-                            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image))),
-                          title: Text(carta.nome, maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: Text('${carta.collectionName}${numero.isEmpty ? '' : ' • $numero'}${tipos.isEmpty ? '' : ' • $tipos'}', maxLines: 2, overflow: TextOverflow.ellipsis),
-                          onTap: () {
-                            Navigator.pop(sheetContext);
-                            Navigator.push(context, MaterialPageRoute(builder: (_) => CartaDetalheScreen(carta: carta)));
-                          });
-                      })),
+                  Expanded(
+                    child: resultados.isEmpty
+                        ? Center(
+                            child: Text(
+                              controller.text.trim().isEmpty
+                                  ? 'As sugestões aparecerão aqui.'
+                                  : 'Nenhuma carta encontrada.',
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: resultados.length > 80 ? 80 : resultados.length,
+                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final carta = resultados[index];
+                              final numero = _texto(carta.dados, 'number');
+                              final tipos = _tiposDaCarta(carta).join(' • ');
+                              return ListTile(
+                                leading: SizedBox(
+                                  width: 48,
+                                  height: 64,
+                                  child: Image.file(
+                                    carta.arquivo,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) =>
+                                        const Icon(Icons.broken_image),
+                                  ),
+                                ),
+                                title: Text(
+                                  carta.nome,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                subtitle: Text(
+                                  '${carta.collectionName}'
+                                  '${numero.isEmpty ? '' : ' • $numero'}'
+                                  '${tipos.isEmpty ? '' : ' • $tipos'}',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                onTap: () {
+                                  Navigator.pop(sheetContext);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => CartaDetalheScreen(carta: carta),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                  if (resultados.length > 80)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Mostrando 80 sugestões. Pressione Enter para abrir todos os resultados.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: resultados.isEmpty
+                          ? null
+                          : () => abrirResultados(sheetContext, resultados),
+                      icon: const Icon(Icons.grid_view),
+                      label: const Text('Abrir resultados'),
+                    ),
+                  ),
                 ]),
               ),
             ),
@@ -940,6 +1068,78 @@ class CartasScreen extends StatelessWidget {
                 );
               },
             ),
+    );
+  }
+}
+
+class BuscaGlobalResultadosScreen extends StatelessWidget {
+  final String termo;
+  final List<Carta> cartas;
+
+  const BuscaGlobalResultadosScreen({
+    super.key,
+    required this.termo,
+    required this.cartas,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Resultados da busca'),
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '"$termo"',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                Text('${cartas.length} cartas'),
+              ],
+            ),
+          ),
+          Expanded(
+            child: GridView.builder(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 0.68,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemCount: cartas.length,
+              itemBuilder: (context, index) {
+                final carta = cartas[index];
+                return InkWell(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CartaDetalheScreen(carta: carta),
+                    ),
+                  ),
+                  child: Card(
+                    clipBehavior: Clip.antiAlias,
+                    child: Image.file(
+                      carta.arquivo,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.broken_image, size: 42),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
