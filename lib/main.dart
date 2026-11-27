@@ -609,11 +609,20 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     final colecoesPorId = <String, Colecao>{
       for (final colecao in colecoes) colecao.nome.split('_').first: colecao,
     };
-    final cartasComImagem = <String, Carta>{};
-    for (final cartas in _cartasPorColecao.values) {
-      for (final carta in cartas) {
-        final arquivo = _texto(carta.dados, 'file');
-        cartasComImagem['${carta.collectionId}|${_normalizarChave(arquivo)}'] = carta;
+    // O cache de coleções só contém imagens das coleções já abertas.
+    // Para a busca global, indexamos os arquivos reais de todas as pastas.
+    final imagensPorChave = <String, File>{};
+    for (final colecao in colecoes) {
+      final id = colecao.nome.split('_').first;
+      await for (final item in colecao.pasta.list(recursive: true, followLinks: false)) {
+        if (item is! File) continue;
+        final nomeArquivo = item.uri.pathSegments.isNotEmpty
+            ? item.uri.pathSegments.last
+            : item.path.split(Platform.pathSeparator).last;
+        final ponto = nomeArquivo.lastIndexOf('.');
+        final ext = ponto >= 0 ? nomeArquivo.substring(ponto).toLowerCase() : '';
+        if (!extensoesImagem.contains(ext)) continue;
+        imagensPorChave['$id|${_normalizarChave(nomeArquivo)}'] = item;
       }
     }
     final todasCartas = <Carta>[];
@@ -622,13 +631,13 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       final id = _texto(dados, 'collectionId');
       final arquivo = _texto(dados, 'file').trim();
       if (id.isEmpty || arquivo.isEmpty) continue;
-      final existente = cartasComImagem['$id|${_normalizarChave(arquivo)}'];
+      final imagem = imagensPorChave['$id|${_normalizarChave(arquivo)}'];
       final colecao = colecoesPorId[id];
       final nome = _texto(dados, 'name').trim();
       final nomeColecao = _texto(dados, 'collectionName').trim();
-      todasCartas.add(existente ?? Carta(
+      todasCartas.add(Carta(
         nome: nome.isNotEmpty ? nome : arquivo,
-        arquivo: File('/__tcg_missing_image__/$arquivo'),
+        arquivo: imagem ?? File('/__tcg_missing_image__/$arquivo'),
         dados: dados,
         collectionName: nomeColecao.isNotEmpty
             ? nomeColecao
