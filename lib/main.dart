@@ -393,7 +393,9 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     // como Stadium. Corrige o subtipo pelo nome impresso da carta.
     if (const {'1153', '1130', '1121', '1118'}.contains(carta.collectionId)) {
       final nome = _normalizarChave(carta.nome);
-      const estadios = {'holon legacy', 'mt moon'};
+      const estadios = {
+        'holon legacy', 'mt moon', 'high pressure system', 'low pressure system',
+      };
       const apoiadores = {
         'copycat', 'holon mentor', 'island hermit', "mr stone s project",
         'professor elm s training method', 'professor oak s research',
@@ -402,8 +404,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       };
       const ferramentas = {
         'buffer piece', 'strength charm', 'balloon berry', 'giant cape',
-        'rescue scarf', 'tool scrapper', 'exp all', 'high pressure system',
-        'low pressure system',
+        'rescue scarf', 'exp all',
       };
       if (estadios.contains(nome)) return 1;
       if (apoiadores.contains(nome)) return 2;
