@@ -399,10 +399,28 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       }
     }
     int categoria(Carta c) {
-      final supertipo = (c.dados?['supertype'] ?? '').toString().toLowerCase();
+      final dados = c.dados ?? const <String, dynamic>{};
+      final supertipo = (dados['supertype'] ?? '').toString().toLowerCase().trim();
+
+      // O índice histórico contém cartas Pokémon marcadas incorretamente
+      // como Trainer. Para não deixar essas cartas fora da ordenação por
+      // tipo, reconhecemos Pokémon também pelos campos próprios da carta.
+      final tipos = dados['types'];
+      final temTipoPokemon = tipos is List &&
+          tipos.isNotEmpty &&
+          tipos.first.toString().trim().isNotEmpty;
+      final temEstagioPokemon =
+          (dados['stage'] ?? '').toString().trim().isNotEmpty;
+      final temEvolucaoPokemon =
+          (dados['evolvesFrom'] ?? '').toString().trim().isNotEmpty;
+      final temTipoEnergia =
+          (dados['energyType'] ?? '').toString().trim().isNotEmpty ||
+          (dados['energyCategory'] ?? '').toString().trim().isNotEmpty;
+
       if (supertipo == 'pokemon' || supertipo == 'pokémon') return 0;
+      if (supertipo == 'energy' || temTipoEnergia) return 2;
+      if (temTipoPokemon || temEstagioPokemon || temEvolucaoPokemon) return 0;
       if (supertipo == 'trainer') return 1;
-      if (supertipo == 'energy') return 2;
       return 3;
     }
     int subtipoTreinador(Carta c) {
