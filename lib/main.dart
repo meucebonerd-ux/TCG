@@ -389,6 +389,27 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   }
 
   int _ordemTreinador(Carta carta) {
+    // O índice legado destas quatro expansões marcou todos os Treinadores
+    // como Stadium. Corrige o subtipo pelo nome impresso da carta.
+    if (const {'1153', '1130', '1121', '1118'}.contains(carta.collectionId)) {
+      final nome = _normalizarChave(carta.nome);
+      const estadios = {'holon legacy', 'mt moon'};
+      const apoiadores = {
+        'copycat', 'holon mentor', 'island hermit', "mr stone s project",
+        'professor elm s training method', 'professor oak s research',
+        'tv reporter', 'bill s maintenance', 'celio s network',
+        'prof oak s research', 'mr briney s compassion',
+      };
+      const ferramentas = {
+        'buffer piece', 'strength charm', 'balloon berry', 'giant cape',
+        'rescue scarf', 'tool scrapper', 'exp all', 'high pressure system',
+        'low pressure system',
+      };
+      if (estadios.contains(nome)) return 1;
+      if (apoiadores.contains(nome)) return 2;
+      if (ferramentas.contains(nome)) return 3;
+      return 0;
+    }
     final dados = carta.dados;
     final subtipo = _textoCampos(dados, [
       'trainerSubtype', 'trainerType', 'subtype', 'subtypes',
@@ -576,6 +597,35 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
 
   String _categoriaDaCarta(Carta carta) {
     final dados = carta.dados ?? const <String, dynamic>{};
+
+    // IDs e faixas impressas das cartas nas expansões cujo índice antigo
+    // capturou o logo da coleção como tipo e "Trainer/Stadium" como categoria.
+    // A numeração separa inequivocamente Pokémon, Treinadores e Energias.
+    final numero = int.tryParse(
+      _texto(dados, 'number').split('/').first.trim(),
+    ) ?? int.tryParse(_texto(dados, 'numberSort'));
+    final idColecao = carta.collectionId.isNotEmpty
+        ? carta.collectionId
+        : _texto(dados, 'collectionId');
+    if (numero != null) {
+      const treinadores = <String, Set<int>>{
+        '1153': {113, 114, 115, 116},
+        '1130': {72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83},
+        '1121': {87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102},
+        '1118': {82, 83, 84, 85, 86, 87, 88},
+      };
+      const energias = <String, Set<int>>{
+        '1153': {117, 118},
+        '1130': {84, 85, 86, 87, 88, 89},
+        '1121': {103},
+      };
+      if (energias[idColecao]?.contains(numero) ?? false) return 'Energia';
+      if (treinadores[idColecao]?.contains(numero) ?? false) {
+        return 'Treinador / não identificado';
+      }
+      if (treinadores.containsKey(idColecao)) return 'Pokémon';
+    }
+
     final supertype = _normalizarChave(_texto(dados, 'supertype'));
     final energyType = _texto(dados, 'energyType').trim();
     final energyCategory = _texto(dados, 'energyCategory').trim();
