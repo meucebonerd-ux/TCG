@@ -7,6 +7,8 @@ import 'package:permission_handler/permission_handler.dart';
 const String raizColecoes = '/sdcard/meuapp/tcg físico';
 const Set<String> extensoesImagem = {'.jpg', '.jpeg', '.png', '.webp', '.gif'};
 
+final ValueNotifier<bool> modoEscuroGlobal = ValueNotifier<bool>(false);
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const PokemonTcgApp());
@@ -17,13 +19,18 @@ class PokemonTcgApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Pokemon TCG Manager',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
+    return ValueListenableBuilder<bool>(
+      valueListenable: modoEscuroGlobal,
+      builder: (context, escuro, _) => MaterialApp(
+        title: 'Pokemon TCG Manager',
+        themeMode: escuro ? ThemeMode.dark : ThemeMode.light,
+        theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue), useMaterial3: true),
+        darkTheme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue, brightness: Brightness.dark),
+          useMaterial3: true,
+        ),
+        home: const ColecoesScreen(),
       ),
-      home: const ColecoesScreen(),
     );
   }
 }
@@ -32,8 +39,10 @@ class Carta {
   final String nome;
   final File arquivo;
   final Map<String, dynamic>? dados;
+  final String collectionName;
+  final String collectionId;
 
-  const Carta({required this.nome, required this.arquivo, this.dados});
+  const Carta({required this.nome, required this.arquivo, this.dados, this.collectionName = '', this.collectionId = ''});
 }
 
 class Colecao {
@@ -64,6 +73,9 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   Colecao? colecaoSelecionada;
   bool carregando = true;
   String erroMsg = '';
+  String filtroTipo = 'Todos';
+  String filtroRaridade = 'Todas';
+  String filtroCategoria = 'Todas';
 
   @override
   void initState() {
@@ -231,6 +243,8 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                 nome: nome,
                 arquivo: item,
                 dados: indiceCartas['$id|${_normalizarChave(slug)}'],
+                collectionName: _nomePasta(pasta).replaceFirst(RegExp(r'^\d+_'), '').replaceAll('_', ' '),
+                collectionId: id,
               ));
             }
           }
@@ -454,6 +468,170 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     if (selecionada != null && mounted) setState(() => colecaoSelecionada = selecionada);
   }
 
+
+  String _texto(Map<String, dynamic>? dados, String chave) => (dados?[chave] ?? '').toString();
+
+  List<String> _tiposDaCarta(Carta carta) {
+    final value = carta.dados?['types'];
+    if (value is List) return value.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
+    final energy = _texto(carta.dados, 'energyType');
+    return energy.isEmpty ? <String>[] : <String>[energy];
+  }
+
+  String _categoriaDaCarta(Carta carta) {
+    final supertype = _texto(carta.dados, 'supertype');
+    if (supertype.isNotEmpty) return supertype;
+    final trainer = _texto(carta.dados, 'trainerSubtype');
+    if (trainer.isNotEmpty) return 'Trainer • $trainer';
+    final energy = _texto(carta.dados, 'energyCategory');
+    if (energy.isNotEmpty) return 'Energy • $energy';
+    return 'Não categorizada';
+  }
+
+  String _raridadeDaCarta(Carta carta) {
+    final value = carta.dados?['rarity'] ?? carta.dados?['rarities'];
+    if (value is List) return value.map((e) => e.toString()).join(', ');
+    return (value ?? '').toString();
+  }
+
+  bool _cartaPassaFiltros(Carta carta) {
+    final tipoOk = filtroTipo == 'Todos' || _tiposDaCarta(carta).any((t) => t.toLowerCase() == filtroTipo.toLowerCase());
+    final raridade = _raridadeDaCarta(carta);
+    final raridadeOk = filtroRaridade == 'Todas' || (raridade.isNotEmpty && raridade == filtroRaridade);
+    final categoriaOk = filtroCategoria == 'Todas' || _categoriaDaCarta(carta) == filtroCategoria;
+    return tipoOk && raridadeOk && categoriaOk;
+  }
+
+  Future<void> _abrirFiltrosColecao() async {
+    final cartas = colecaoSelecionada?.cartas ?? <Carta>[];
+    final tipos = <String>{};
+    final raridades = <String>{};
+    final categorias = <String>{};
+    for (final carta in cartas) {
+      tipos.addAll(_tiposDaCarta(carta));
+      final raridade = _raridadeDaCarta(carta);
+      if (raridade.isNotEmpty) raridades.add(raridade);
+      categorias.add(_categoriaDaCarta(carta));
+    }
+    var tipo = filtroTipo;
+    var raridade = filtroRaridade;
+    var categoria = filtroCategoria;
+    await showModalBottomSheet<void>(
+      context: context, isScrollControlled: true, showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, atualizar) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              const Text('Filtros da coleção', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: tipo, isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Tipo', border: OutlineInputBorder()),
+                items: ['Todos', ...tipos.toList()..sort()].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+                onChanged: (v) => atualizar(() => tipo = v ?? 'Todos'),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: raridade, isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Raridade', border: OutlineInputBorder()),
+                items: ['Todas', ...raridades.toList()..sort()].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+                onChanged: raridades.isEmpty ? null : (v) => atualizar(() => raridade = v ?? 'Todas'),
+              ),
+              if (raridades.isEmpty)
+                const Padding(padding: EdgeInsets.only(top: 4), child: Text('O índice atual não possui dados de raridade; esse filtro será ativado quando o campo estiver disponível.', style: TextStyle(fontSize: 12))),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: categoria, isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Categoria', border: OutlineInputBorder()),
+                items: ['Todas', ...categorias.toList()..sort()].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+                onChanged: (v) => atualizar(() => categoria = v ?? 'Todas'),
+              ),
+              const SizedBox(height: 16),
+              Row(children: [
+                Expanded(child: OutlinedButton(onPressed: () {
+                  setState(() { filtroTipo = 'Todos'; filtroRaridade = 'Todas'; filtroCategoria = 'Todas'; });
+                  Navigator.pop(sheetContext);
+                }, child: const Text('Limpar'))),
+                const SizedBox(width: 12),
+                Expanded(child: FilledButton(onPressed: () {
+                  setState(() { filtroTipo = tipo; filtroRaridade = raridade; filtroCategoria = categoria; });
+                  Navigator.pop(sheetContext);
+                }, child: const Text('Aplicar filtros'))),
+              ]),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _abrirBuscaGlobal() async {
+    final todasCartas = colecoes.expand((c) => c.cartas).toList();
+    final controller = TextEditingController();
+    var categoriaSelecionada = 'Todos';
+    await showModalBottomSheet<void>(
+      context: context, isScrollControlled: true, showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, atualizar) {
+          final termo = _normalizarChave(controller.text);
+          final categorias = todasCartas.map(_categoriaDaCarta).toSet().toList()..sort();
+          final resultados = todasCartas.where((carta) {
+            if (categoriaSelecionada != 'Todos' && _categoriaDaCarta(carta) != categoriaSelecionada) return false;
+            if (termo.isEmpty) return true;
+            final campos = [carta.nome, _texto(carta.dados, 'name'), _texto(carta.dados, 'number'),
+              _texto(carta.dados, 'pokemon'), _texto(carta.dados, 'collectionName'), carta.collectionName,
+              ..._tiposDaCarta(carta)];
+            return campos.any((campo) => _normalizarChave(campo).contains(termo));
+          }).take(250).toList();
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.of(sheetContext).viewInsets.bottom + 16),
+              child: SizedBox(height: MediaQuery.of(sheetContext).size.height * .82,
+                child: Column(children: [
+                  const Align(alignment: Alignment.centerLeft, child: Text('Pesquisa global de cartas', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600))),
+                  const SizedBox(height: 12),
+                  TextField(controller: controller, autofocus: true, onChanged: (_) => atualizar(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'Nome, número, Pokémon, tipo ou coleção',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: controller.text.isEmpty ? null : IconButton(icon: const Icon(Icons.clear), onPressed: () { controller.clear(); atualizar(() {}); }),
+                      border: const OutlineInputBorder())),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: categoriaSelecionada, isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Categoria', border: OutlineInputBorder()),
+                    items: ['Todos', ...categorias].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+                    onChanged: (v) => atualizar(() => categoriaSelecionada = v ?? 'Todos')),
+                  const SizedBox(height: 8),
+                  Align(alignment: Alignment.centerLeft, child: Text('${resultados.length}${resultados.length == 250 ? '+' : ''} resultados', style: Theme.of(context).textTheme.bodySmall)),
+                  const SizedBox(height: 4),
+                  Expanded(child: resultados.isEmpty ? const Center(child: Text('Nenhuma carta encontrada.')) :
+                    ListView.separated(itemCount: resultados.length, separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final carta = resultados[index];
+                        final numero = _texto(carta.dados, 'number');
+                        final tipos = _tiposDaCarta(carta).join(' • ');
+                        return ListTile(
+                          leading: SizedBox(width: 48, height: 64, child: Image.file(carta.arquivo, fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image))),
+                          title: Text(carta.nome, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text('${carta.collectionName}${numero.isEmpty ? '' : ' • $numero'}${tipos.isEmpty ? '' : ' • $tipos'}', maxLines: 2, overflow: TextOverflow.ellipsis),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => CartaDetalheScreen(carta: carta)));
+                          });
+                      })),
+                ]),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    controller.dispose();
+  }
+
   String _nomePasta(Directory pasta) {
     final caminho = pasta.path.endsWith(Platform.pathSeparator)
         ? pasta.path.substring(0, pasta.path.length - 1)
@@ -464,16 +642,36 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   @override
   Widget build(BuildContext context) {
     final selecionada = colecaoSelecionada;
+    final cartasExibidas = selecionada?.cartas.where(_cartaPassaFiltros).toList() ?? <Carta>[];
 
-    return Scaffold(
+    return WillPopScope(
+      onWillPop: () async {
+        if (colecaoSelecionada != null) {
+          setState(() {
+            colecaoSelecionada = null;
+            filtroTipo = 'Todos';
+            filtroRaridade = 'Todas';
+            filtroCategoria = 'Todas';
+          });
+          return false;
+        }
+        return true;
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(selecionada == null ? 'Cartas' : selecionada.nome),
         actions: [
-          IconButton(
-            tooltip: 'Atualizar',
-            onPressed: carregarColecoes,
-            icon: const Icon(Icons.refresh),
+          IconButton(tooltip: 'Pesquisa global', onPressed: colecoes.isEmpty ? null : _abrirBuscaGlobal, icon: const Icon(Icons.manage_search)),
+          if (selecionada != null)
+            IconButton(tooltip: 'Filtrar cartas', onPressed: _abrirFiltrosColecao, icon: const Icon(Icons.filter_list)),
+          ValueListenableBuilder<bool>(
+            valueListenable: modoEscuroGlobal,
+            builder: (context, escuro, _) => IconButton(
+              tooltip: escuro ? 'Ativar modo claro' : 'Ativar modo escuro',
+              onPressed: () => modoEscuroGlobal.value = !escuro,
+              icon: Icon(escuro ? Icons.light_mode : Icons.dark_mode)),
           ),
+          IconButton(tooltip: 'Atualizar', onPressed: carregarColecoes, icon: const Icon(Icons.refresh)),
         ],
       ),
       floatingActionButton: carregando || erroMsg.isNotEmpty || colecoes.isEmpty
@@ -555,7 +753,17 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                     )
                   : selecionada.cartas.isEmpty
                       ? const Center(child: Text('Nenhuma imagem encontrada nesta coleção.'))
-                      : GridView.builder(
+                      : cartasExibidas.isEmpty
+                          ? const Center(child: Text('Nenhuma carta corresponde aos filtros.'))
+                          : Column(children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                                child: Row(children: [
+                                  Expanded(child: Text('${cartasExibidas.length} de ${selecionada.cartas.length} cartas')),
+                                  TextButton.icon(onPressed: _abrirFiltrosColecao, icon: const Icon(Icons.filter_list), label: const Text('Filtros')),
+                                ]),
+                              ),
+                              Expanded(child: GridView.builder(
                           padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),
                           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: 2,
@@ -584,7 +792,9 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                               ),
                             );
                           },
-                        ),
+                        )),
+                              ]),
+    ),
     );
   }
 }
