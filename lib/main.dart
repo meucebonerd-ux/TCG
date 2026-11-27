@@ -582,23 +582,22 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         'colorless', 'incolor',
       };
       final ehBuscaTipo = tiposConhecidos.contains(termo);
-      final ehBuscaNumero = RegExp(r'^\\d+(?:\\s*/\\s*\\d+)?$').hasMatch(texto.trim());
+      final ehBuscaNumero =
+          RegExp(r'^\d+(?:\s*/\s*\d+)?$').hasMatch(texto.trim());
 
       bool nomeCorresponde(Carta carta) {
-        final nome = _normalizarChave(
-          _texto(carta.dados, 'name').isNotEmpty
-              ? _texto(carta.dados, 'name')
-              : carta.nome,
-        );
-        return nome.contains(termo);
+        final nomeDados = _normalizarChave(_texto(carta.dados, 'name'));
+        final nomeArquivo = _normalizarChave(carta.nome);
+        final pokemon = _normalizarChave(_texto(carta.dados, 'pokemon'));
+        return nomeDados.contains(termo) ||
+            nomeArquivo.contains(termo) ||
+            pokemon.contains(termo);
       }
 
-      final existePokemonComEsseNome = !ehBuscaTipo && !ehBuscaNumero &&
-          todasCartas.any((carta) =>
-              _categoriaDaCarta(carta) == 'Pokémon' && nomeCorresponde(carta));
-      final existeColecaoComEsseNome = colecoes.any(
-        (colecao) => _normalizarChave(colecao.nome).contains(termo),
-      );
+      final existeColecaoComEsseNome = !ehBuscaTipo && !ehBuscaNumero &&
+          colecoes.any(
+            (colecao) => _normalizarChave(colecao.nome).contains(termo),
+          );
 
       final resultados = todasCartas.where((carta) {
         final categoria = _categoriaDaCarta(carta);
@@ -611,31 +610,35 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
             (tipo) => _tipoCanonico(tipo) == _tipoCanonico(termo),
           );
         }
+
         if (ehBuscaNumero) {
-          final numero = _normalizarChave(_texto(carta.dados, 'number'));
-          return numero == termo ||
-              numero.startsWith('$termo ') ||
-              numero.startsWith('$termo/');
+          final numero = _texto(carta.dados, 'number').trim();
+          return _normalizarChave(numero) == termo ||
+              RegExp('^' + RegExp.escape(texto.trim()) + r'(?:\s*/|\s|$)')
+                  .hasMatch(numero);
         }
+
         if (existeColecaoComEsseNome) {
           return _normalizarChave(carta.collectionName).contains(termo);
         }
-        if (existePokemonComEsseNome && categoria != 'Pokémon') return false;
-        if (categoria == 'Pokémon') {
-          final pokemon = _normalizarChave(_texto(carta.dados, 'pokemon'));
-          return nomeCorresponde(carta) || (pokemon.isNotEmpty && pokemon.contains(termo));
-        }
+
+        // A busca por nome não depende da categoria inferida: há registros
+        // Pokémon com supertype/subtype incompletos no índice histórico.
         return nomeCorresponde(carta);
       }).toList();
 
       int ordemColecao(Carta carta) {
-        final indice = colecoes.indexWhere((item) => item.nome == carta.collectionName);
+        final indice =
+            colecoes.indexWhere((item) => item.nome == carta.collectionName);
         return indice < 0 ? 999999 : indice;
       }
+
       int numeroDaCarta(Carta carta) {
         final numero = _texto(carta.dados, 'number');
-        return int.tryParse(RegExp(r'^\\d+').firstMatch(numero)?.group(0) ?? '') ?? 999999;
+        return int.tryParse(RegExp(r'^\d+').firstMatch(numero)?.group(0) ?? '') ??
+            999999;
       }
+
       resultados.sort((a, b) {
         final lancamento = ordemColecao(a).compareTo(ordemColecao(b));
         if (lancamento != 0) return lancamento;
