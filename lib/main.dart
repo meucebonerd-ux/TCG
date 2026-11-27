@@ -1111,7 +1111,7 @@ class CartasScreen extends StatelessWidget {
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => Container(
                         width: double.infinity,
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        color: Theme.of(context).colorScheme.surfaceVariant,
                         padding: const EdgeInsets.all(12),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
