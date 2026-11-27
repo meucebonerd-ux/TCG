@@ -10,6 +10,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: tcg-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,6 +30,12 @@ jobs:
 
       - name: Validar sintaxe do indexador
         run: node --check scripts/indexar-delta-reign.mjs
+
+      - name: Atualizar branch antes de reconstruir o índice
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Reindexa Delta Reign')
+        run: |
+          git fetch origin "${GITHUB_REF_NAME}"
+          git reset --hard "origin/${GITHUB_REF_NAME}"
 
       - name: Reconstruir Delta Reign com metadados TCGdex
         if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Reindexa Delta Reign')
