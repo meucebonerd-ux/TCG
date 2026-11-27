@@ -206,27 +206,41 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
 
   Future<Map<String, Map<String, dynamic>>> _carregarIndiceCartas() async {
     if (_indiceCartasCache != null) return _indiceCartasCache!;
-    final conteudo = await rootBundle.loadString('assets/data/dados_cartas.json');
-    final json = jsonDecode(conteudo);
+
+    // O crawler original grava o índice completo neste caminho compartilhado.
+    // O asset embarcado continua como fallback e complemento.
+    final fontes = <String>[];
+    final arquivoExterno = File('/sdcard/meuapp/dados_cartas.json');
+    if (await arquivoExterno.exists()) {
+      fontes.add(await arquivoExterno.readAsString());
+    }
+    fontes.add(await rootBundle.loadString('assets/data/dados_cartas.json'));
+
     final resultado = <String, Map<String, dynamic>>{};
-    if (json is Map && json['cards'] is List) for (final item in json['cards']) {
-      if (item is Map) {
-        final dados = Map<String, dynamic>.from(item);
-        final id = dados['collectionId']?.toString();
-        final arquivo = _arquivoDaCarta(dados);
-        final slug = _texto(dados, 'slug').trim();
-        final nome = _texto(dados, 'name').trim();
-        final identificador = slug.isNotEmpty
-            ? slug
-            : (arquivo.isNotEmpty ? arquivo : nome);
-        // O índice de pesquisa não pode depender da existência de imagem local.
-        // Cartas sem arquivo correspondente também precisam estar disponíveis.
-        if (id != null && id.isNotEmpty && identificador.isNotEmpty) {
-          resultado['$id|${_normalizarChave(identificador)}'] = dados;
+    for (final conteudo in fontes) {
+      try {
+        final json = jsonDecode(conteudo);
+        if (json is! Map || json['cards'] is! List) continue;
+        for (final item in json['cards']) {
+          if (item is! Map) continue;
+          final dados = Map<String, dynamic>.from(item);
+          final id = dados['collectionId']?.toString();
+          final arquivo = _arquivoDaCarta(dados);
+          final slug = _texto(dados, 'slug').trim();
+          final nome = _texto(dados, 'name').trim();
+          final identificador = slug.isNotEmpty ? slug : (arquivo.isNotEmpty ? arquivo : nome);
+          if (id == null || id.isEmpty || identificador.isEmpty) continue;
+          final chave = '$id|${_normalizarChave(identificador)}';
+          // O JSON externo tem prioridade; o asset preenche apenas ausências.
+          resultado.putIfAbsent(chave, () => dados);
         }
+      } catch (e) {
+        debugPrint('Falha ao ler uma fonte do índice de cartas: $e');
       }
     }
-    _indiceCartasCache = resultado; return resultado;
+    _indiceCartasCache = resultado;
+    debugPrint('Índice de cartas carregado: ${resultado.length} registros.');
+    return resultado;
   }
 
   String _slugDoArquivoLocal(String nomeArquivo) {
