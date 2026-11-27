@@ -767,7 +767,6 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     // Para a busca global, indexamos os arquivos reais de todas as pastas.
     final imagensPorChave = <String, File>{};
     final imagensPorSlug = <String, File>{};
-    final imagensPorSlug = <String, File>{};
     for (final colecao in colecoes) {
       final id = colecao.nome.split('_').first;
       await for (final item in colecao.pasta.list(recursive: true, followLinks: false)) {
