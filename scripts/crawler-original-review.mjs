@@ -454,13 +454,18 @@ async function processSet(set) {
 }
 
 async function indexExistingCollections() {
-  const folders = fs.readdirSync(OUTPUT, { withFileTypes: true })
-    .filter(entry => entry.isDirectory() && entry.name !== "estado");
+  const roots = [OUTPUT, "/sdcard/meuapp/tcg fisico", "/sdcard/Download/TCG_Collector"]
+    .filter(root => fs.existsSync(root));
+  const folders = roots.flatMap(root =>
+    fs.readdirSync(root, { withFileTypes: true })
+      .filter(entry => entry.isDirectory() && entry.name !== "estado")
+      .map(entry => ({ name: entry.name, path: path.join(root, entry.name) }))
+  );
   let processed = 0;
   let errors = 0;
 
   for (const folderEntry of folders) {
-    const folder = path.join(OUTPUT, folderEntry.name);
+    const folder = folderEntry.path;
     const manifest = path.join(folder, "cartas.json");
     if (!fs.existsSync(manifest)) continue;
 
