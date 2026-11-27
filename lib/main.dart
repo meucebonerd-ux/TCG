@@ -767,6 +767,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     // Para a busca global, indexamos os arquivos reais de todas as pastas.
     final imagensPorChave = <String, File>{};
     final imagensPorSlug = <String, File>{};
+    final imagensPorSlug = <String, File>{};
     for (final colecao in colecoes) {
       final id = colecao.nome.split('_').first;
       await for (final item in colecao.pasta.list(recursive: true, followLinks: false)) {
@@ -781,6 +782,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         if (slugLocal.isNotEmpty) {
           final chaveSlug = id + '|' + _normalizarChave(slugLocal);
           imagensPorChave[chaveSlug] = item;
+          imagensPorSlug[chaveSlug] = item;
         }
       }
     }
@@ -809,6 +811,35 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
             : (colecao?.nome.replaceFirst(RegExp(r'^\\d+_'), '').replaceAll('_', ' ') ?? ''),
         collectionId: id,
       ));
+    }
+    // Inclui também imagens locais que ainda não possuem registro no índice.
+    final chavesIndexadas = <String>{};
+    for (final carta in cartasPreparadas) {
+      final slug = _texto(carta.dados, 'slug').trim();
+      final arquivo = _arquivoDaCarta(carta.dados);
+      final identificador = slug.isNotEmpty ? slug : _slugDoArquivoLocal(arquivo);
+      if (identificador.isNotEmpty) chavesIndexadas.add(carta.collectionId + '|' + _normalizarChave(identificador));
+    }
+    for (final entry in imagensPorSlug.entries) {
+      if (chavesIndexadas.contains(entry.key)) continue;
+      final separador = entry.key.indexOf('|');
+      if (separador <= 0) continue;
+      final id = entry.key.substring(0, separador);
+      final slug = entry.key.substring(separador + 1);
+      final colecao = colecoesPorId[id];
+      if (colecao == null) continue;
+      final nomeColecao = colecao.nome.replaceFirst(RegExp(r'^\\d+_'), '').replaceAll('_', ' ');
+      final nome = _nomeLegivelDoSlug(slug);
+      final partes = slug.split('-');
+      final numero = partes.length >= 2 ? int.tryParse(partes[partes.length - 2]) : null;
+      final total = partes.isNotEmpty ? int.tryParse(partes.last) : null;
+      final dados = <String, dynamic>{
+        'collectionId': id, 'collectionName': nomeColecao, 'slug': slug,
+        'file': entry.value.uri.pathSegments.last, 'name': nome,
+        'number': numero == null ? '' : numero.toString().padLeft(3, '0') + '/' + (total?.toString() ?? ''),
+        'numberSort': numero, 'supertype': 'Unknown', 'types': <String>[], 'needsReview': true,
+      };
+      cartasPreparadas.add(Carta(nome: nome.isEmpty ? slug : nome, arquivo: entry.value, dados: dados, collectionName: nomeColecao, collectionId: id));
     }
     _cartasBuscaGlobalCache = cartasPreparadas;
     }
