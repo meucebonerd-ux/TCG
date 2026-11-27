@@ -186,12 +186,30 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       for (final chave in indice.keys) { final p = chave.indexOf('|'); if (p > 0) { final id = chave.substring(0, p); quantidades[id] = (quantidades[id] ?? 0) + 1; } }
       final resultado = <Colecao>[];
       for (final pasta in pastas) {
-        final id = idDaPasta(pasta); final logoNome = arquivosLogo[id];
-        final logo = logoNome == null ? null : File('${pastaLogos.path}/$logoNome');
-        resultado.add(Colecao(nome: _nomePasta(pasta), pasta: pasta, cartas: const <Carta>[], logo: logo != null && await logo.exists() ? logo : null, ano: anosCatalogo[id] ?? RegExp(r'(?:19|20)\d{2}').firstMatch(_nomePasta(pasta))?.group(0), totalCartas: quantidades[id] ?? 0));
+        final id = idDaPasta(pasta);
+        final logoNome = arquivosLogo[id];
+        final logo = logoNome == null ? null : File(pastaLogos.path + '/' + logoNome);
+        final slugsLocais = <String>{};
+        await for (final item in pasta.list(recursive: true, followLinks: false)) {
+          if (item is! File) continue;
+          final nomeArquivo = item.uri.pathSegments.last;
+          final ponto = nomeArquivo.lastIndexOf('.');
+          final ext = ponto >= 0 ? nomeArquivo.substring(ponto).toLowerCase() : '';
+          if (extensoesImagem.contains(ext)) slugsLocais.add(_normalizarChave(_slugDoArquivoLocal(nomeArquivo)));
+        }
+        final totalLocal = slugsLocais.length;
+        final totalIndice = quantidades[id] ?? 0;
+        resultado.add(Colecao(
+          nome: _nomePasta(pasta),
+          pasta: pasta,
+          cartas: const <Carta>[],
+          logo: logo != null && await logo.exists() ? logo : null,
+          ano: anosCatalogo[id] ?? RegExp(r'(?:19|20)\d{2}').firstMatch(_nomePasta(pasta))?.group(0),
+          totalCartas: totalIndice > totalLocal ? totalIndice : totalLocal,
+        ));
       }
       if (!mounted) return;
-      setState(() { colecoes = resultado; colecaoSelecionada = null; _cartasPorColecao.clear(); carregando = false; });
+      setState(() { colecoes = resultado; colecaoSelecionada = null; _cartasPorColecao.clear(); _cartasBuscaGlobalCache = null; _indiceCartasCache = null; carregando = false; });
     } catch (e) { if (mounted) setState(() { erroMsg = 'Erro ao carregar coleções: $e'; carregando = false; }); }
   }
 
