@@ -12,11 +12,6 @@ if (!COLLECTION_ID || !COLLECTION_NAME || !TCGCOLLECTOR_URL) {
 const OUTPUT = 'assets/data/dados_cartas.json';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-async function getJson(url) {
-  const response = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 TCG-Collector-Indexer/1.0', accept: 'application/json' } });
-  if (!response.ok) throw new Error(`HTTP ${response.status} em ${url}`);
-  return response.json();
-}
 async function getText(url) {
   let lastError;
   for (let attempt = 0; attempt < 7; attempt++) {
@@ -47,10 +42,11 @@ function extractCollectorCards(html) {
     const slug = url.split('/').filter(Boolean).at(-1);
     if (!slug) return;
     const label = $(element).text().replace(/\s+/g, ' ').trim();
-    const numberMatch = label.match(/(\d{1,3})\s*\/\s*103/);
-    const slugMatch = slug.match(/-(\d{1,3})-103$/);
+    const numberMatch = label.match(/(\d{1,4})\s*\/\s*(\d{1,4})/);
+    const slugMatch = slug.match(/-(\d{1,4})-(\d{1,4})$/);
     const localId = numberMatch?.[1] ?? slugMatch?.[1];
-    if (localId) cards.set(numericId(localId), { slug, url });
+    const total = numberMatch?.[2] ?? slugMatch?.[2] ?? null;
+    if (localId) cards.set(numericId(localId), { slug, url, total: total ? Number(total) : null });
   });
   return cards;
 }
@@ -74,9 +70,10 @@ function extractCardDetails(html, collector) {
     : null;
   const energyCategory = category === 'Energy' ? (/Special Energy/i.test(body) ? 'Special' : 'Basic') : null;
   const energyType = category === 'Energy' ? (types[0] ?? null) : null;
-  const numberMatch = body.match(/(\d{1,3})\s*\/\s*103/);
+  const numberMatch = body.match(/(\d{1,4})\s*\/\s*(\d{1,4})/);
   const number = numberMatch ? Number(numberMatch[1]) : Number(collector.localId);
-  return { name, category, types, stage, rarity, trainerSubtype, energyCategory, energyType, hp: hpMatch ? Number(hpMatch[1]) : null, number };
+  const total = numberMatch ? Number(numberMatch[2]) : collector.total;
+  return { name, category, types, stage, rarity, trainerSubtype, energyCategory, energyType, hp: hpMatch ? Number(hpMatch[1]) : null, number, total };
 }
 
 async function main() {
