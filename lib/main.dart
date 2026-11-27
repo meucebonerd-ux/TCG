@@ -413,6 +413,8 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     if (categoria.contains('basic') || categoria.contains('basica')) return true;
     if (nome.contains('special energy') || nome.contains('energia especial')) return false;
     if (nome.contains('basic energy') || nome.contains('energia basica')) return true;
+    // Nos metadados antigos, energyType sozinho identifica Energia Básica.
+    if (_texto(dados, 'energyType').trim().isNotEmpty) return true;
     return false;
   }
 
