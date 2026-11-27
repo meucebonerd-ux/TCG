@@ -79,11 +79,27 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   String filtroTipo = 'Todos';
   String filtroRaridade = 'Todas';
   String filtroCategoria = 'Todas';
+  final ScrollController _catalogoScrollController = ScrollController();
+  double _catalogoScrollOffset = 0;
+
+  void _restaurarPosicaoCatalogo() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_catalogoScrollController.hasClients) return;
+      final limite = _catalogoScrollController.position.maxScrollExtent;
+      _catalogoScrollController.jumpTo(_catalogoScrollOffset.clamp(0.0, limite).toDouble());
+    });
+  }
 
   @override
   void initState() {
     super.initState();
     carregarColecoes();
+  }
+
+  @override
+  void dispose() {
+    _catalogoScrollController.dispose();
+    super.dispose();
   }
 
   Future<bool> garantirPermissao() async {
@@ -687,6 +703,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
             filtroRaridade = 'Todas';
             filtroCategoria = 'Todas';
           });
+          _restaurarPosicaoCatalogo();
           return false;
         }
         return true;
@@ -744,6 +761,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
               : selecionada == null
                   ? GridView.builder(
                       key: const PageStorageKey<String>('catalogo-colecoes'),
+                      controller: _catalogoScrollController,
                       padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 2,
@@ -756,7 +774,12 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                         final item = colecoes[index];
                         return InkWell(
                           borderRadius: BorderRadius.circular(12),
-                          onTap: () => setState(() => colecaoSelecionada = item),
+                          onTap: () {
+                            _catalogoScrollOffset = _catalogoScrollController.hasClients
+                                ? _catalogoScrollController.offset
+                                : _catalogoScrollOffset;
+                            setState(() => colecaoSelecionada = item);
+                          },
                           child: Card(
                             margin: EdgeInsets.zero,
                             clipBehavior: Clip.antiAlias,
