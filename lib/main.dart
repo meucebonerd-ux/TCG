@@ -724,6 +724,8 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     final controller = TextEditingController();
     Timer? debounceBusca;
     var categoriaSelecionada = 'Todos';
+    final preferenciasBusca = await SharedPreferences.getInstance();
+    var ordemDecrescente = preferenciasBusca.getBool('busca_global_decrescente') ?? true;
     var resultadosAtuais = <Carta>[];
 
     List<Carta> buscar(String texto) {
@@ -806,9 +808,17 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       }
 
       resultados.sort((a, b) {
-        final lancamento = ordemColecao(a).compareTo(ordemColecao(b));
+        final ordemA = ordemColecao(a);
+        final ordemB = ordemColecao(b);
+        final lancamento = ordemDecrescente
+            ? ordemB.compareTo(ordemA)
+            : ordemA.compareTo(ordemB);
         if (lancamento != 0) return lancamento;
-        return numeroDaCarta(a).compareTo(numeroDaCarta(b));
+        final numeroA = numeroDaCarta(a);
+        final numeroB = numeroDaCarta(b);
+        return ordemDecrescente
+            ? numeroB.compareTo(numeroA)
+            : numeroA.compareTo(numeroB);
       });
       return resultados;
     }
@@ -898,6 +908,27 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                       categoriaSelecionada = v ?? 'Todos';
                       resultadosAtuais = buscar(controller.text);
                     }),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<bool>(
+                    value: ordemDecrescente,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Ordem de lançamento',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: true, child: Text('Mais recentes primeiro')),
+                      DropdownMenuItem(value: false, child: Text('Mais antigos primeiro')),
+                    ],
+                    onChanged: (valor) async {
+                      if (valor == null) return;
+                      ordemDecrescente = valor;
+                      await preferenciasBusca.setBool('busca_global_decrescente', valor);
+                      atualizar(() {
+                        resultadosAtuais = buscar(controller.text);
+                      });
+                    },
                   ),
                   const SizedBox(height: 8),
                   Align(
