@@ -294,7 +294,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
           ? arquivo.uri.pathSegments.last
           : arquivo.path.split(Platform.pathSeparator).last;
       final slugOriginal = nomeArquivo.split('__').first;
-      final semNumero = slugOriginal.replaceFirst(RegExp(r'-\\d{1,4}-\\d{1,4}
+      final semNumero = slugOriginal.replaceFirst(RegExp(r'-\d{1,4}-\\d{1,4}
     return cartas;
   }
 
@@ -719,7 +719,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       final slugNormalizado = _normalizarChave(slugOriginal);
       if (arquivosGlobalIndexados.contains(entry.key) ||
           slugsGlobalIndexados.contains('$id|$slugNormalizado')) continue;
-      final semNumero = slugOriginal.replaceFirst(RegExp(r'-\\d{1,4}-\\d{1,4}
+      final semNumero = slugOriginal.replaceFirst(RegExp(r'-\d{1,4}-\\d{1,4}
     final categoriasBusca = todasCartas.map(_categoriaDaCarta).toSet().toList()..sort();
     final controller = TextEditingController();
     Timer? debounceBusca;
@@ -1379,7 +1379,7 @@ class CartaDetalheScreen extends StatelessWidget {
           .where((parte) => parte.isNotEmpty)
           .map((parte) => parte[0].toUpperCase() + parte.substring(1))
           .join(' ');
-      final numeroMatch = RegExp(r'-(\\d{1,4})-(\\d{1,4})
+      final numeroMatch = RegExp(r'-(\d{1,4})-(\\d{1,4})
     return cartas;
   }
 
@@ -3538,7 +3538,7 @@ class CartaDetalheScreen extends StatelessWidget {
       final nome = semNumero.replaceAll(RegExp(r'[-_]+'), ' ')
           .split(' ').where((parte) => parte.isNotEmpty)
           .map((parte) => parte[0].toUpperCase() + parte.substring(1)).join(' ');
-      final numeroMatch = RegExp(r'-(\\d{1,4})-(\\d{1,4})
+      final numeroMatch = RegExp(r'-(\d{1,4})-(\\d{1,4})
     final categoriasBusca = todasCartas.map(_categoriaDaCarta).toSet().toList()..sort();
     final controller = TextEditingController();
     Timer? debounceBusca;
@@ -4198,7 +4198,7 @@ class CartaDetalheScreen extends StatelessWidget {
           .where((parte) => parte.isNotEmpty)
           .map((parte) => parte[0].toUpperCase() + parte.substring(1))
           .join(' ');
-      final numeroMatch = RegExp(r'-(\\d{1,4})-(\\d{1,4})
+      final numeroMatch = RegExp(r'-(\d{1,4})-(\\d{1,4})
     return cartas;
   }
 
@@ -7039,7 +7039,7 @@ class CartaDetalheScreen extends StatelessWidget {
           .where((parte) => parte.isNotEmpty)
           .map((parte) => parte[0].toUpperCase() + parte.substring(1))
           .join(' ');
-      final numeroMatch = RegExp(r'-(\\d{1,4})-(\\d{1,4})
+      final numeroMatch = RegExp(r'-(\d{1,4})-(\\d{1,4})
     return cartas;
   }
 
