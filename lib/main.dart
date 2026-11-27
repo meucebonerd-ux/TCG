@@ -257,14 +257,17 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
             final extensao = ponto >= 0 ? nomeArquivo.substring(ponto).toLowerCase() : '';
             if (extensoesImagem.contains(extensao)) {
               final nome = ponto > 0 ? nomeArquivo.substring(0, ponto) : nomeArquivo;
-              final slug = nomeArquivo.split('__').first;
-              final dadosCarta = indiceCartas['$id|${_normalizarChave(slug)}'];
+              final dadosCarta = indiceCartas[
+                  '$id|${_normalizarChave(nomeArquivo)}'];
 
-              // Cada pasta representa um set específico. Não incluir imagens
-              // sem correspondência no índice nem cartas cujo collectionId
-              // pertença a outro set (ex.: Classic dentro do set principal).
+              // A associação é feita pelo nome COMPLETO do arquivo,
+              // incluindo o hash, e pelo ID da coleção. O slug sozinho não
+              // é uma identidade segura em subconjuntos comemorativos:
+              // cartas novas e Classic podem compartilhar nomes/numeração.
               if (dadosCarta == null ||
-                  dadosCarta['collectionId']?.toString() != id) {
+                  dadosCarta['collectionId']?.toString() != id ||
+                  _normalizarChave(dadosCarta['file']?.toString() ?? '') !=
+                      _normalizarChave(nomeArquivo)) {
                 continue;
               }
 
@@ -327,9 +330,10 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         for (final item in json['cards']) {
           if (item is Map) {
             final id = item['collectionId']?.toString();
-            final slug = item['slug']?.toString();
-            if (id != null && slug != null) {
-              resultado['$id|${_normalizarChave(slug)}'] = Map<String, dynamic>.from(item);
+            final arquivo = item['file']?.toString();
+            if (id != null && arquivo != null && arquivo.isNotEmpty) {
+              resultado['$id|${_normalizarChave(arquivo)}'] =
+                  Map<String, dynamic>.from(item);
             }
           }
         }
