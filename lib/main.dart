@@ -199,7 +199,14 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     final json = jsonDecode(conteudo);
     final resultado = <String, Map<String, dynamic>>{};
     if (json is Map && json['cards'] is List) for (final item in json['cards']) {
-      if (item is Map) { final id = item['collectionId']?.toString(); final arquivo = item['file']?.toString(); if (id != null && arquivo != null && arquivo.isNotEmpty) resultado['$id|${_normalizarChave(arquivo)}'] = Map<String, dynamic>.from(item); }
+      if (item is Map) {
+        final dados = Map<String, dynamic>.from(item);
+        final id = dados['collectionId']?.toString();
+        final arquivo = _arquivoDaCarta(dados);
+        if (id != null && id.isNotEmpty && arquivo.isNotEmpty) {
+          resultado['$id|${_normalizarChave(arquivo)}'] = dados;
+        }
+      }
     }
     _indiceCartasCache = resultado; return resultado;
   }
@@ -233,7 +240,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       final dados = entry.value;
       if (dados['collectionId']?.toString() != id) continue;
 
-      final nomeArquivo = _texto(dados, 'file').trim();
+      final nomeArquivo = _arquivoDaCarta(dados);
       if (nomeArquivo.isEmpty) continue;
       final imagem = imagensPorNome[_normalizarChave(nomeArquivo)];
       final nomeDados = _texto(dados, 'name').trim();
@@ -268,6 +275,19 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       setState(() { colecaoSelecionada = Colecao(nome: colecao.nome, pasta: colecao.pasta, cartas: cartas, logo: colecao.logo, ano: colecao.ano, totalCartas: colecao.totalCartas); carregandoColecao = false; });
     } catch (e) { if (mounted) setState(() { carregandoColecao = false; erroMsg = 'Erro ao abrir coleção: $e'; }); }
   }
+  String _arquivoDaCarta(Map<String, dynamic>? dados) {
+    final direto = _texto(dados, 'file').trim();
+    if (direto.isNotEmpty) return direto.replaceAll('\\\\', '/').split('/').last;
+    final arquivos = dados?['files'];
+    if (arquivos is List) {
+      for (final item in arquivos) {
+        final caminho = item?.toString().trim() ?? '';
+        if (caminho.isNotEmpty) return caminho.replaceAll('\\\\', '/').split('/').last;
+      }
+    }
+    return '';
+  }
+
   String _normalizarChave(String valor) => valor
       .toLowerCase()
       .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
@@ -629,7 +649,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     for (final entry in indiceCompleto.entries) {
       final dados = entry.value;
       final id = _texto(dados, 'collectionId');
-      final arquivo = _texto(dados, 'file').trim();
+      final arquivo = _arquivoDaCarta(dados);
       if (id.isEmpty || arquivo.isEmpty) continue;
       final imagem = imagensPorChave['$id|${_normalizarChave(arquivo)}'];
       final colecao = colecoesPorId[id];
@@ -666,10 +686,10 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       bool nomeCorresponde(Carta carta) {
         final nomeDados = _normalizarChave(_texto(carta.dados, 'name'));
         final nomeArquivo = _normalizarChave(carta.nome);
-        final pokemon = _normalizarChave(_texto(carta.dados, 'pokemon'));
-        return nomeDados.contains(termo) ||
-            nomeArquivo.contains(termo) ||
-            pokemon.contains(termo);
+        // A busca textual usa somente o nome principal da carta.
+        // O campo legado "pokemon" pode conter associações amplas e gerar
+        // cartas intrusas que não possuem o termo no próprio nome.
+        return nomeDados.contains(termo) || nomeArquivo.contains(termo);
       }
 
       final existeColecaoComEsseNome = !ehBuscaTipo && !ehBuscaNumero &&
