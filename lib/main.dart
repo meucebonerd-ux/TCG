@@ -564,42 +564,40 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   }
 
   String _categoriaDaCarta(Carta carta) {
-    // O supertype/trainerSubtype do índice histórico está incorreto em muitos
-    // registros. Identificamos Pokémon pelos campos próprios e Energia pelos
-    // campos de energia, sem depender de um único campo incompleto.
     final dados = carta.dados ?? const <String, dynamic>{};
-    final nomeDados = _normalizarChave(_texto(dados, 'name'));
-    final nomeArquivo = _normalizarChave(carta.nome);
-    final nome = nomeDados.isNotEmpty ? nomeDados : nomeArquivo;
+    final supertype = _normalizarChave(_texto(dados, 'supertype'));
+    // O supertype é o dado explícito do índice e deve prevalecer sobre
+    // heurísticas baseadas em stage/evolvesFrom, sobretudo em coleções antigas.
+    if (supertype == 'pokemon' || supertype == 'pokémon') return 'Pokémon';
+    if (supertype == 'trainer' || supertype == 'treinador') {
+      return 'Treinador / não identificado';
+    }
+    if (supertype == 'energy' || supertype == 'energia') return 'Energia';
 
     final energyType = _texto(dados, 'energyType').trim();
     final energyCategory = _texto(dados, 'energyCategory').trim();
-    if (energyType.isNotEmpty ||
-        energyCategory.isNotEmpty ||
-        nome.endsWith(' energy') ||
-        nomeArquivo.endsWith(' energy')) {
+    final nome = _normalizarChave(
+      _texto(dados, 'name').trim().isNotEmpty ? _texto(dados, 'name') : carta.nome,
+    );
+    if (energyType.isNotEmpty || energyCategory.isNotEmpty ||
+        nome.endsWith(' energy') || nome.endsWith(' energia')) {
       return 'Energia';
     }
 
     final types = dados['types'];
     final temTipoPokemon = types is List &&
-        types.isNotEmpty &&
-        types.first.toString().trim().isNotEmpty;
+        types.any((item) => item.toString().trim().isNotEmpty);
     final stage = _normalizarChave(_texto(dados, 'stage'));
     const estagiosPokemon = {
       'basic', 'stage 1', 'stage 2', 'vmax', 'vstar',
       'level up', 'break', 'legend', 'v union', 'restored',
     };
     final temEvolucaoPokemon = _texto(dados, 'evolvesFrom').trim().isNotEmpty;
-
-    if (temTipoPokemon ||
-        estagiosPokemon.contains(stage) ||
-        temEvolucaoPokemon) {
+    if (temTipoPokemon || estagiosPokemon.contains(stage) || temEvolucaoPokemon) {
       return 'Pokémon';
     }
     return 'Treinador / não identificado';
   }
-
   String _raridadeDaCarta(Carta carta) {
     final value = carta.dados?['rarity'] ?? carta.dados?['rarities'];
     if (value is List) return value.map((e) => e.toString()).join(', ');
