@@ -189,15 +189,6 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         final id = idDaPasta(pasta);
         final logoNome = arquivosLogo[id];
         final logo = logoNome == null ? null : File(pastaLogos.path + '/' + logoNome);
-        final slugsLocais = <String>{};
-        await for (final item in pasta.list(recursive: true, followLinks: false)) {
-          if (item is! File) continue;
-          final nomeArquivo = item.uri.pathSegments.last;
-          final ponto = nomeArquivo.lastIndexOf('.');
-          final ext = ponto >= 0 ? nomeArquivo.substring(ponto).toLowerCase() : '';
-          if (extensoesImagem.contains(ext)) slugsLocais.add(_normalizarChave(_slugDoArquivoLocal(nomeArquivo)));
-        }
-        final totalLocal = slugsLocais.length;
         final totalIndice = quantidades[id] ?? 0;
         resultado.add(Colecao(
           nome: _nomePasta(pasta),
@@ -205,7 +196,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
           cartas: const <Carta>[],
           logo: logo != null && await logo.exists() ? logo : null,
           ano: anosCatalogo[id] ?? RegExp(r'(?:19|20)\d{2}').firstMatch(_nomePasta(pasta))?.group(0),
-          totalCartas: totalIndice > totalLocal ? totalIndice : totalLocal,
+          totalCartas: totalIndice,
         ));
       }
       if (!mounted) return;
@@ -348,125 +339,27 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       .trim();
 
   void _ordenarCartas(List<Carta> cartas) {
-    const tipos = [
-      'grass', 'fire', 'water', 'lightning', 'psychic', 'fighting',
-      'darkness', 'metal', 'fairy', 'dragon', 'colorless'
-    ];
-    const aliases = {
-      'grama': 'grass', 'planta': 'grass', 'fogo': 'fire',
-      'agua': 'water', 'eletrico': 'lightning', 'raios': 'lightning',
-      'psiquico': 'psychic', 'lutador': 'fighting', 'sombrio': 'darkness',
-      'noturno': 'darkness', 'metalico': 'metal', 'metal': 'metal',
-      'fada': 'fairy', 'dragao': 'dragon', 'incolor': 'colorless',
-    };
-    String tipoDa(Carta c) {
-      final raw = (c.dados?['types'] is List && (c.dados!['types'] as List).isNotEmpty)
-          ? (c.dados!['types'] as List).first.toString().toLowerCase()
-          : (c.dados?['energyType']?.toString().toLowerCase() ?? '');
-      return aliases[raw] ?? raw;
-    }
-    int indiceTipo(Carta c) {
-      final i = tipos.indexOf(tipoDa(c));
-      return i < 0 ? 99 : i;
-    }
-    int numero(Carta c) {
-      final n = c.dados?['numberSort'];
-      if (n is num) return n.toInt();
-      final match = RegExp(r'^\d+').firstMatch(c.dados?['number']?.toString() ?? '');
+    int numero(Carta carta) {
+      final direto = carta.dados?['numberSort'];
+      if (direto is num) return direto.toInt();
+      final bruto = _texto(carta.dados, 'number');
+      final match = RegExp(r'\\d+').firstMatch(bruto);
       return match == null ? 999999 : int.tryParse(match.group(0)!) ?? 999999;
     }
-    int estagio(Carta c) {
-      final s = _normalizarChave(c.dados?['stage']?.toString() ?? '');
-      if (s == 'basic') return 0;
-      if (s == 'stage 1') return 1;
-      if (s == 'stage 2') return 2;
-      return 3;
-    }
 
-    final porNome = <String, List<Carta>>{};
-    for (final c in cartas) {
-      final nome = _normalizarChave(c.dados?['name']?.toString() ?? '');
-      if (nome.isNotEmpty) porNome.putIfAbsent(nome, () => []).add(c);
-    }
-    String linhaEvolutiva(Carta carta) {
-      var atual = carta;
-      final visitados = <String>{};
-      while (true) {
-        final pai = _normalizarChave(atual.dados?['evolvesFrom']?.toString() ?? '');
-        if (pai.isEmpty || visitados.contains(pai)) {
-          return _normalizarChave(atual.dados?['name']?.toString() ?? carta.nome);
-        }
-        visitados.add(pai);
-        final candidatos = porNome[pai];
-        if (candidatos == null || candidatos.isEmpty) return pai;
-        atual = candidatos.first;
-      }
-    }
-    int categoria(Carta c) {
-      final dados = c.dados ?? const <String, dynamic>{};
-      final supertipo = (dados['supertype'] ?? '').toString().toLowerCase().trim();
-
-      // O índice histórico contém cartas Pokémon marcadas incorretamente
-      // como Trainer. Para não deixar essas cartas fora da ordenação por
-      // tipo, reconhecemos Pokémon também pelos campos próprios da carta.
-      final tipos = dados['types'];
-      final temTipoPokemon = tipos is List &&
-          tipos.isNotEmpty &&
-          tipos.first.toString().trim().isNotEmpty;
-      final temEstagioPokemon =
-          (dados['stage'] ?? '').toString().trim().isNotEmpty;
-      final temEvolucaoPokemon =
-          (dados['evolvesFrom'] ?? '').toString().trim().isNotEmpty;
-      final temTipoEnergia =
-          (dados['energyType'] ?? '').toString().trim().isNotEmpty ||
-          (dados['energyCategory'] ?? '').toString().trim().isNotEmpty;
-
-      if (supertipo == 'pokemon' || supertipo == 'pokémon') return 0;
-      if (supertipo == 'energy' || temTipoEnergia) return 2;
-      if (temTipoPokemon || temEstagioPokemon || temEvolucaoPokemon) return 0;
-      if (supertipo == 'trainer') return 1;
-      return 3;
-    }
-    int subtipoTreinador(Carta c) {
-      switch (_normalizarChave(c.dados?['trainerSubtype']?.toString() ?? '')) {
-        case 'item': return 0;
-        case 'stadium': return 1;
-        case 'supporter': return 2;
-        case 'pokemon tool': return 3;
-        default: return 9;
-      }
-    }
-    int subtipoEnergia(Carta c) {
-      final value = (c.dados?['energyCategory'] ?? '').toString().toLowerCase();
-      if (value == 'basic') return 0;
-      if (value == 'special') return 1;
-      return 2;
+    String complementoNumero(Carta carta) {
+      final bruto = _texto(carta.dados, 'number').toLowerCase().trim();
+      return bruto.replaceFirst(RegExp(r'^\\D*\\d+'), '').trim();
     }
 
     cartas.sort((a, b) {
-      final ca = categoria(a), cb = categoria(b);
-      if (ca != cb) return ca.compareTo(cb);
-      if (ca == 0) {
-        var r = indiceTipo(a).compareTo(indiceTipo(b));
-        if (r != 0) return r;
-        r = linhaEvolutiva(a).compareTo(linhaEvolutiva(b));
-        if (r != 0) return r;
-        r = estagio(a).compareTo(estagio(b));
-        if (r != 0) return r;
-      } else if (ca == 1) {
-        final r = subtipoTreinador(a).compareTo(subtipoTreinador(b));
-        if (r != 0) return r;
-      } else if (ca == 2) {
-        final r = subtipoEnergia(a).compareTo(subtipoEnergia(b));
-        if (r != 0) return r;
-        if (subtipoEnergia(a) == 0) {
-          final r2 = indiceTipo(a).compareTo(indiceTipo(b));
-          if (r2 != 0) return r2;
-        }
-      }
-      final n = numero(a).compareTo(numero(b));
-      if (n != 0) return n;
-      return a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
+      final porNumero = numero(a).compareTo(numero(b));
+      if (porNumero != 0) return porNumero;
+      final porComplemento = complementoNumero(a).compareTo(complementoNumero(b));
+      if (porComplemento != 0) return porComplemento;
+      final porNome = a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
+      if (porNome != 0) return porNome;
+      return _texto(a.dados, 'slug').compareTo(_texto(b.dados, 'slug'));
     });
   }
 
@@ -754,6 +647,23 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     var categoriaSelecionada = 'Todos';
     var resultadosAtuais = <Carta>[];
 
+    final nomesPesquisa = <Carta, String>{
+      for (final carta in todasCartas)
+        carta: _normalizarChave(
+          _texto(carta.dados, 'name').replaceAll(RegExp(r'\\([^)]*\\)'), ' '),
+        ),
+    };
+    final ordemColecao = <String, int>{
+      for (var i = 0; i < colecoes.length; i++)
+        _normalizarChave(colecoes[i].nome.replaceFirst(RegExp(r'^\\d+_'), '').replaceAll('_', ' ')): i,
+    };
+    final numerosPesquisa = <Carta, int>{
+      for (final carta in todasCartas)
+        carta: int.tryParse(
+          RegExp(r'^\\d+').firstMatch(_texto(carta.dados, 'number'))?.group(0) ?? '',
+        ) ?? 999999,
+    };
+
     List<Carta> buscar(String texto) {
       final termo = _normalizarChave(texto);
       if (termo.isEmpty) return <Carta>[];
@@ -767,76 +677,66 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       };
       final ehBuscaTipo = tiposConhecidos.contains(termo);
       final ehBuscaNumero =
-          RegExp(r'^\d+(?:\s*/\s*\d+)?$').hasMatch(texto.trim());
+          RegExp(r'^\\d+(?:\\s*/\\s*\\d+)?$').hasMatch(texto.trim());
 
-      bool nomeCorresponde(Carta carta) {
-        // Alguns registros antigos guardaram no campo "name" descrições
-        // entre parênteses (ex.: nome de deck ou Pokémon relacionado).
-        // Esse conteúdo não faz parte do nome da carta e não deve gerar match.
-        final nomeBruto = _texto(carta.dados, 'name');
-        final nomePrincipal = nomeBruto.replaceAll(RegExp(r'\([^)]*\)'), ' ');
-        final nomeDados = _normalizarChave(nomePrincipal);
-        // A busca por nome usa exclusivamente o nome canônico da carta.
-        // Slugs, nomes de arquivos e descrições podem conter referências a
-        // outros Pokémon/decks e não devem criar resultados intrusos.
-        return nomeDados.contains(termo);
+      final nomesEncontrados = <Carta>[];
+      if (!ehBuscaTipo && !ehBuscaNumero) {
+        for (final carta in todasCartas) {
+          if ((nomesPesquisa[carta] ?? '').contains(termo)) {
+            nomesEncontrados.add(carta);
+          }
+        }
       }
 
-      // Primeiro verifica se o termo corresponde ao nome/slug de alguma carta.
-      // Uma coleção pode conter o nome de um Pokémon entre parênteses no título
-      // (ex.: "Pokémon TCG Classic (Charizard)") e não deve sequestrar a busca.
-      final existemCartasComEsseNome = !ehBuscaTipo && !ehBuscaNumero &&
-          todasCartas.any(nomeCorresponde);
-      final existeColecaoComEsseNome = !ehBuscaTipo && !ehBuscaNumero &&
-          !existemCartasComEsseNome &&
-          colecoes.any(
-            (colecao) => _normalizarChave(colecao.nome).contains(termo),
-          );
+      final colecaoEncontrada = !ehBuscaTipo &&
+          !ehBuscaNumero &&
+          nomesEncontrados.isEmpty &&
+          colecoes.any((colecao) =>
+              _normalizarChave(colecao.nome).contains(termo));
 
-      final resultados = todasCartas.where((carta) {
+      final resultados = <Carta>[];
+      final candidatos = nomesEncontrados.isNotEmpty
+          ? nomesEncontrados
+          : (colecaoEncontrada ? todasCartas : todasCartas);
+
+      for (final carta in candidatos) {
         final categoria = _categoriaDaCarta(carta);
         if (categoriaSelecionada != 'Todos' &&
-            categoria != categoriaSelecionada) return false;
+            categoria != categoriaSelecionada) continue;
 
         if (ehBuscaTipo) {
-          if (categoria != 'Pokémon' && categoria != 'Energia') return false;
-          return _tiposDaCarta(carta).any(
+          if (categoria != 'Pokémon' && categoria != 'Energia') continue;
+          if (!_tiposDaCarta(carta).any(
             (tipo) => _tipoCanonico(tipo) == _tipoCanonico(termo),
-          );
-        }
-
-        if (ehBuscaNumero) {
+          )) continue;
+        } else if (ehBuscaNumero) {
           final numero = _texto(carta.dados, 'number').trim();
-          return _normalizarChave(numero) == termo ||
-              RegExp('^' + RegExp.escape(texto.trim()) + r'(?:\s*/|\s|$)')
-                  .hasMatch(numero);
+          final numeroDigitado = texto.trim();
+          if (_normalizarChave(numero) != termo &&
+              !RegExp('^' + RegExp.escape(numeroDigitado) + r'(?:\\s*/|\\s|$)')
+                  .hasMatch(numero)) continue;
+        } else if (nomesEncontrados.isNotEmpty) {
+          // Correspondência exclusivamente com o nome canônico da carta.
+          // Descrição, texto de efeito, slug e nome de arquivo não participam.
+          if (!(nomesPesquisa[carta] ?? '').contains(termo)) continue;
+        } else if (colecaoEncontrada) {
+          if (!_normalizarChave(carta.collectionName).contains(termo)) continue;
+        } else {
+          continue;
         }
-
-        if (existeColecaoComEsseNome) {
-          return _normalizarChave(carta.collectionName).contains(termo);
-        }
-
-        // A busca por nome não depende da categoria inferida: há registros
-        // Pokémon com supertype/subtype incompletos no índice histórico.
-        return nomeCorresponde(carta);
-      }).toList();
-
-      int ordemColecao(Carta carta) {
-        final indice =
-            colecoes.indexWhere((item) => item.nome == carta.collectionName);
-        return indice < 0 ? 999999 : indice;
-      }
-
-      int numeroDaCarta(Carta carta) {
-        final numero = _texto(carta.dados, 'number');
-        return int.tryParse(RegExp(r'^\d+').firstMatch(numero)?.group(0) ?? '') ??
-            999999;
+        resultados.add(carta);
       }
 
       resultados.sort((a, b) {
-        final lancamento = ordemColecao(a).compareTo(ordemColecao(b));
+        final nomeA = _normalizarChave(a.collectionName);
+        final nomeB = _normalizarChave(b.collectionName);
+        final lancamento = (ordemColecao[nomeA] ?? 999999)
+            .compareTo(ordemColecao[nomeB] ?? 999999);
         if (lancamento != 0) return lancamento;
-        return numeroDaCarta(a).compareTo(numeroDaCarta(b));
+        final numero = (numerosPesquisa[a] ?? 999999)
+            .compareTo(numerosPesquisa[b] ?? 999999);
+        if (numero != 0) return numero;
+        return a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
       });
       return resultados;
     }
