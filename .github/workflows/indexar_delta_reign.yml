@@ -1,0 +1,71 @@
+name: Indexar Delta Reign e gerar APK
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "scripts/indexar-delta-reign.mjs"
+      - "lib/main.dart"
+      - ".github/workflows/indexar_delta_reign.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  indexar-e-compilar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Baixar projeto
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalar parser HTML
+        run: npm install --no-save cheerio@1.0.0-rc.12
+
+      - name: Indexar as 141 cartas Delta Reign
+        run: node scripts/indexar-delta-reign.mjs
+
+      - name: Salvar índice no GitHub
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/data/dados_cartas.json
+          if git diff --cached --quiet; then
+            echo "O índice já estava atualizado."
+          else
+            git commit -m "Adiciona as 141 cartas de Delta Reign ao índice"
+            git push
+          fi
+
+      - name: Preparar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17"
+
+      - name: Preparar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.19.0"
+          channel: "stable"
+
+      - name: Instalar dependências Flutter
+        run: flutter pub get
+
+      - name: Compilar APK
+        run: flutter build apk --release
+
+      - name: Publicar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tcg-delta-reign-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
