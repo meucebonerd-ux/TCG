@@ -37,7 +37,7 @@ const failuresFile = path.join(STATE, "falhas.jsonl");
 const INDEX_LOCAL = path.join(STATE, "dados_cartas.json");
 const INDEX_ANDROID = "/sdcard/meuapp/dados_cartas.json";
 const normalizeText = value => String(value || "")
-  .normalize("NFD").replace(/[\\u0300-\\u036f]/g, "")
+  .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
   .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 let cardIndex = new Map();
@@ -53,12 +53,12 @@ for (const file of [INDEX_LOCAL, INDEX_ANDROID]) {
 
 function extractCardMetadata(html, cardUrl, set, filename) {
   const $ = cheerio.load(html);
-  const body = $("body").text().replace(/\\s+/g, " ").trim();
+  const body = $("body").text().replace(/\s+/g, " ").trim();
   const normalized = normalizeText(body);
   const slug = safeName(new URL(cardUrl).pathname.split("/").filter(Boolean).pop());
   const title = $("h1").first().text().trim() ||
     $('meta[property="og:title"]').attr("content") || $("title").text().trim();
-  const numberMatch = body.match(/\\b(\\d{1,4})\\s*\\/\\s*(\\d{1,4})\\b/);
+  const numberMatch = body.match(/\b(\d{1,4})\s*\/\s*(\d{1,4})\b/);
   const knownTypes = ["Grass", "Fire", "Water", "Lightning", "Psychic",
     "Fighting", "Darkness", "Metal", "Fairy", "Dragon", "Colorless"];
   const types = [];
@@ -74,21 +74,21 @@ function extractCardMetadata(html, cardUrl, set, filename) {
   });
 
   let supertype = "Unknown";
-  if (/\\btrainer\\b/.test(normalized)) supertype = "Trainer";
-  else if (/\\b(basic|special) energy\\b/.test(normalized) || /\\benergy\\b/.test(normalized)) supertype = "Energy";
-  else if (/\\bpokemon\\b/.test(normalized)) supertype = "Pokemon";
+  if (/\btrainer\b/.test(normalized)) supertype = "Trainer";
+  else if (/\b(basic|special) energy\b/.test(normalized) || /\benergy\b/.test(normalized)) supertype = "Energy";
+  else if (/\bpokemon\b/.test(normalized)) supertype = "Pokemon";
 
-  const stageMatch = body.match(/\\b(Basic|Stage\\s*1|Stage\\s*2|Level[- ]?Up|Restored|BREAK|LEGEND|VMAX|VSTAR|V-UNION)\\s*(?:Pok[eé]mon)?\\b/i);
-  const stage = stageMatch ? stageMatch[1].replace(/\\s+/g, " ") : null;
-  const evolvesMatch = body.match(/Evolves\\s+from\\s+([A-Za-z0-9'’ .-]+?)(?=\\s+(?:HP|Pok[eé]mon|Stage|Type|Weakness|Resistance|Retreat|Expansion|Card number|Illustrator)\\b|$)/i);
+  const stageMatch = body.match(/\b(Basic|Stage\s*1|Stage\s*2|Level[- ]?Up|Restored|BREAK|LEGEND|VMAX|VSTAR|V-UNION)\s*(?:Pok[eé]mon)?\b/i);
+  const stage = stageMatch ? stageMatch[1].replace(/\s+/g, " ") : null;
+  const evolvesMatch = body.match(/Evolves\s+from\s+([A-Za-z0-9'’ .-]+?)(?=\s+(?:HP|Pok[eé]mon|Stage|Type|Weakness|Resistance|Retreat|Expansion|Card number|Illustrator)\b|$)/i);
   const evolvesFrom = evolvesMatch ? evolvesMatch[1].trim().replace(/[.,;]+$/, "") : null;
 
   let trainerSubtype = null;
   if (supertype === "Trainer") {
     if (/pokemon tool/i.test(body)) trainerSubtype = "Pokemon Tool";
-    else if (/\\bstadium\\b/i.test(body)) trainerSubtype = "Stadium";
-    else if (/\\bsupporter\\b/i.test(body)) trainerSubtype = "Supporter";
-    else if (/\\bitem\\b/i.test(body)) trainerSubtype = "Item";
+    else if (/\bstadium\b/i.test(body)) trainerSubtype = "Stadium";
+    else if (/\bsupporter\b/i.test(body)) trainerSubtype = "Supporter";
+    else if (/\bitem\b/i.test(body)) trainerSubtype = "Item";
   }
   const energyCategory = supertype === "Energy"
     ? (/special energy/i.test(body) ? "Special" : (/basic energy/i.test(body) ? "Basic" : "Unknown"))
@@ -99,7 +99,7 @@ function extractCardMetadata(html, cardUrl, set, filename) {
     collectionName: set.name,
     slug,
     url: cardUrl,
-    name: title.split("|")[0].replace(/\\s*-\\s*TCG Collector.*$/i, "").trim(),
+    name: title.split("|")[0].replace(/\s*-\s*TCG Collector.*$/i, "").trim(),
     number: numberMatch ? numberMatch[1] + "/" + numberMatch[2] : null,
     numberSort: numberMatch ? Number(numberMatch[1]) : null,
     supertype,
