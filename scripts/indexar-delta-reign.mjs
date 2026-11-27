@@ -41,22 +41,22 @@ function extractCollectorCards(html) {
 const KNOWN_TYPES = new Set(['Grass','Fire','Water','Lightning','Psychic','Fighting','Darkness','Metal','Fairy','Dragon','Colorless']);
 function extractCardDetails(html, collector) {
   const $ = cheerio.load(html);
-  const body = $('body').text().replace(/\\s+/g, ' ').trim();
+  const body = $('body').text().replace(/\s+/g, ' ').trim();
   const name = $('h1').first().text().trim();
   if (!name) throw new Error(`Nome não encontrado em ${collector.url}`);
-  const category = /Pokémon/i.test(body) ? 'Pokemon' : (/\\bTrainer\\b/i.test(body) ? 'Trainer' : (/\\bEnergy\\b/i.test(body) ? 'Energy' : 'Unknown'));
+  const category = /Pokémon/i.test(body) ? 'Pokemon' : (/\bTrainer\b/i.test(body) ? 'Trainer' : (/\bEnergy\b/i.test(body) ? 'Energy' : 'Unknown'));
   const types = [...new Set($('img[alt]').map((_, el) => $(el).attr('alt')?.trim()).get().filter(x => KNOWN_TYPES.has(x)))];
-  const stageMatch = body.match(/\\b(Basic|Stage 1|Stage 2|VMAX|VSTAR|V-UNION|MEGA|BREAK)\\b/i);
+  const stageMatch = body.match(/\b(Basic|Stage 1|Stage 2|VMAX|VSTAR|V-UNION|MEGA|BREAK)\b/i);
   const stage = stageMatch ? stageMatch[1] : null;
-  const hpMatch = body.match(/\\bHP\\s*(\\d+)\\b/i);
+  const hpMatch = body.match(/\bHP\s*(\d+)\b/i);
   const rarityNames = ['Special Illustration Rare','Illustration Rare','Hyper Rare','Ultra Rare','Double Rare','Shiny Rare','Rare Holo','Rare','Uncommon','Common','Promo'];
-  const rarity = rarityNames.find(x => new RegExp('\\\\b' + x.replace(/[.*+?^$}{()|[\\\\]\\\\]/g, '\\\\$&') + '\\\\b','i').test(body)) ?? null;
+  const rarity = rarityNames.find(x => body.toLowerCase().includes(x.toLowerCase())) ?? null;
   const trainerSubtype = category === 'Trainer'
-    ? (['Item','Supporter','Stadium','Pokémon Tool','Tool'].find(x => new RegExp('\\\\b' + x + '\\\\b','i').test(body)) ?? null)
+    ? (['Pokémon Tool','Item','Supporter','Stadium','Tool'].find(x => body.toLowerCase().includes(x.toLowerCase())) ?? null)
     : null;
   const energyCategory = category === 'Energy' ? (/Special Energy/i.test(body) ? 'Special' : 'Basic') : null;
   const energyType = category === 'Energy' ? (types[0] ?? null) : null;
-  const numberMatch = body.match(/(\\d{1,3})\\s*\\/\\s*103/);
+  const numberMatch = body.match(/(\d{1,3})\s*\/\s*103/);
   const number = numberMatch ? Number(numberMatch[1]) : Number(collector.localId);
   return { name, category, types, stage, rarity, trainerSubtype, energyCategory, energyType, hp: hpMatch ? Number(hpMatch[1]) : null, number };
 }
