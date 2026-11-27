@@ -1,6 +1,10 @@
 name: Indexar Delta Reign e gerar APK
 
 on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/indexar_delta_reign.yml"
   workflow_dispatch:
 
 permissions:
