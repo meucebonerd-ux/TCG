@@ -54,14 +54,9 @@ class Colecao {
   final List<Carta> cartas;
   final File? logo;
   final String? ano;
+  final int totalCartas;
 
-  const Colecao({
-    required this.nome,
-    required this.pasta,
-    required this.cartas,
-    this.logo,
-    this.ano,
-  });
+  const Colecao({required this.nome, required this.pasta, required this.cartas, this.logo, this.ano, this.totalCartas = 0});
 }
 
 class ColecoesScreen extends StatefulWidget {
@@ -75,6 +70,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   List<Colecao> colecoes = [];
   Colecao? colecaoSelecionada;
   bool carregando = true;
+  bool carregandoColecao = false;
   String erroMsg = '';
   String filtroTipo = 'Todos';
   String filtroRaridade = 'Todas';
@@ -140,64 +136,25 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     return false;
   }
 
-  Future<void> carregarColecoes() async {
-    if (mounted) {
-      setState(() {
-        carregando = true;
-        erroMsg = '';
-      });
-    }
+  Map<String, Map<String, dynamic>>? _indiceCartasCache;
+  final Map<String, List<Carta>> _cartasPorColecao = {};
 
+  Future<void> carregarColecoes() async {
+    setState(() { carregando = true; erroMsg = ''; });
     try {
       final permitido = await garantirPermissao();
       if (!permitido) {
-        if (mounted) {
-          setState(() {
-            erroMsg = 'Permissão de acesso aos arquivos não concedida.';
-            carregando = false;
-          });
-        }
+        if (mounted) setState(() { erroMsg = 'Permissão de acesso aos arquivos não concedida.'; carregando = false; });
         return;
       }
-
-      // Localiza "tcg fisico" sem depender de acentos ou caixa.
       final pastaBase = Directory('/sdcard/meuapp');
-      if (!await pastaBase.exists()) {
-        throw Exception('Pasta /sdcard/meuapp não encontrada.');
-      }
-
-      String normalizarNome(String valor) {
-        return valor.toLowerCase()
-            .replaceAll('á', 'a').replaceAll('à', 'a')
-            .replaceAll('ã', 'a').replaceAll('â', 'a')
-            .replaceAll('é', 'e').replaceAll('ê', 'e')
-            .replaceAll('í', 'i').replaceAll('ó', 'o')
-            .replaceAll('ô', 'o').replaceAll('õ', 'o')
-            .replaceAll('ú', 'u').replaceAll('ç', 'c')
-            .trim();
-      }
-
+      if (!await pastaBase.exists()) throw Exception('Pasta /sdcard/meuapp não encontrada.');
+      String normalizarNome(String valor) => valor.toLowerCase().replaceAll('á','a').replaceAll('à','a').replaceAll('ã','a').replaceAll('â','a').replaceAll('é','e').replaceAll('ê','e').replaceAll('í','i').replaceAll('ó','o').replaceAll('ô','o').replaceAll('õ','o').replaceAll('ú','u').replaceAll('ç','c').trim();
       Directory? raiz;
-      final diretoriosEncontrados = <String>[];
       await for (final item in pastaBase.list(followLinks: false)) {
-        if (item is Directory) {
-          final nome = item.path.split(Platform.pathSeparator).last;
-          diretoriosEncontrados.add(nome);
-          if (normalizarNome(nome) == 'tcg fisico') {
-            raiz = item;
-            break;
-          }
-        }
+        if (item is Directory && normalizarNome(item.path.split(Platform.pathSeparator).last) == 'tcg fisico') { raiz = item; break; }
       }
-
-      if (raiz == null) {
-        throw Exception(
-          'Pasta "tcg fisico" não encontrada dentro de /sdcard/meuapp. '
-          'Pastas encontradas: ${diretoriosEncontrados.isEmpty ? "(nenhuma)" : diretoriosEncontrados.join(", ")}'
-        );
-      }
-
-      // Catálogo oficial de logos: cada pasta local começa com o ID da coleção.
+      if (raiz == null) throw Exception('Pasta "tcg fisico" não encontrada dentro de /sdcard/meuapp.');
       final pastaLogos = Directory('/sdcard/meuapp/logos');
       final arquivosLogo = <String, String>{};
       final ordemCatalogo = <String, int>{};
@@ -205,143 +162,74 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       final arquivoCatalogo = File('${pastaLogos.path}/catalogo.json');
       if (await arquivoCatalogo.exists()) {
         final dados = jsonDecode(await arquivoCatalogo.readAsString());
-        if (dados is List) {
-          for (var i = 0; i < dados.length; i++) {
-            final item = dados[i];
-            if (item is Map) {
-              final id = item['id']?.toString();
-              final nomeArquivo = item['arquivo']?.toString();
-              if (id != null && id.isNotEmpty && nomeArquivo != null) {
-                arquivosLogo[id] = nomeArquivo;
-                ordemCatalogo[id] = i;
-                final anoRaw = item['ano'] ?? item['year'] ?? item['releaseYear'] ?? item['releaseDate'];
-                final anoMatch = RegExp(r'(?:19|20)\d{2}').firstMatch(anoRaw?.toString() ?? '');
-                if (anoMatch != null) anosCatalogo[id] = anoMatch.group(0)!;
-              }
+        if (dados is List) for (var i = 0; i < dados.length; i++) {
+          final item = dados[i];
+          if (item is Map) {
+            final id = item['id']?.toString(); final nomeArquivo = item['arquivo']?.toString();
+            if (id != null && id.isNotEmpty && nomeArquivo != null) {
+              arquivosLogo[id] = nomeArquivo; ordemCatalogo[id] = i;
+              final anoRaw = item['ano'] ?? item['year'] ?? item['releaseYear'] ?? item['releaseDate'];
+              final match = RegExp(r'(?:19|20)\d{2}').firstMatch(anoRaw?.toString() ?? '');
+              if (match != null) anosCatalogo[id] = match.group(0)!;
             }
           }
         }
       }
-
-      String idDaPasta(Directory pasta) {
-        final nome = _nomePasta(pasta);
-        final separador = nome.indexOf('_');
-        return separador > 0 ? nome.substring(0, separador) : nome;
-      }
-
+      String idDaPasta(Directory pasta) { final nome = _nomePasta(pasta); final p = nome.indexOf('_'); return p > 0 ? nome.substring(0, p) : nome; }
       final pastas = <Directory>[];
-      await for (final item in raiz.list(followLinks: false)) {
-        if (item is Directory) pastas.add(item);
-      }
-      pastas.sort((a, b) {
-        final idA = idDaPasta(a);
-        final idB = idDaPasta(b);
-        final posA = ordemCatalogo[idA] ?? 999999;
-        final posB = ordemCatalogo[idB] ?? 999999;
-        if (posA != posB) return posA.compareTo(posB);
-        return _nomePasta(a).toLowerCase().compareTo(_nomePasta(b).toLowerCase());
-      });
-
-      final indiceCartas = await _carregarIndiceCartas();
+      await for (final item in raiz.list(followLinks: false)) { if (item is Directory) pastas.add(item); }
+      pastas.sort((x, y) { final a = ordemCatalogo[idDaPasta(x)] ?? 999999; final b = ordemCatalogo[idDaPasta(y)] ?? 999999; return a != b ? a.compareTo(b) : _nomePasta(x).toLowerCase().compareTo(_nomePasta(y).toLowerCase()); });
+      final indice = await _carregarIndiceCartas();
+      final quantidades = <String, int>{};
+      for (final chave in indice.keys) { final p = chave.indexOf('|'); if (p > 0) { final id = chave.substring(0, p); quantidades[id] = (quantidades[id] ?? 0) + 1; } }
       final resultado = <Colecao>[];
       for (final pasta in pastas) {
-        final id = idDaPasta(pasta);
-        final cartas = <Carta>[];
-        // Procura imagens também em subpastas da coleção.
-        await for (final item in pasta.list(recursive: true, followLinks: false)) {
-          if (item is File) {
-            final nomeArquivo = item.uri.pathSegments.isNotEmpty
-                ? item.uri.pathSegments.last
-                : item.path.split(Platform.pathSeparator).last;
-            final ponto = nomeArquivo.lastIndexOf('.');
-            final extensao = ponto >= 0 ? nomeArquivo.substring(ponto).toLowerCase() : '';
-            if (extensoesImagem.contains(extensao)) {
-              final nome = ponto > 0 ? nomeArquivo.substring(0, ponto) : nomeArquivo;
-              final dadosCarta = indiceCartas[
-                  '$id|${_normalizarChave(nomeArquivo)}'];
-
-              // A associação é feita pelo nome COMPLETO do arquivo,
-              // incluindo o hash, e pelo ID da coleção. O slug sozinho não
-              // é uma identidade segura em subconjuntos comemorativos:
-              // cartas novas e Classic podem compartilhar nomes/numeração.
-              if (dadosCarta == null ||
-                  dadosCarta['collectionId']?.toString() != id ||
-                  _normalizarChave(dadosCarta['file']?.toString() ?? '') !=
-                      _normalizarChave(nomeArquivo)) {
-                continue;
-              }
-
-              cartas.add(Carta(
-                nome: nome,
-                arquivo: item,
-                dados: dadosCarta,
-                collectionName: _nomePasta(pasta).replaceFirst(RegExp(r'^\d+_'), '').replaceAll('_', ' '),
-                collectionId: id,
-              ));
-            }
-          }
-        }
-        _ordenarCartas(cartas);
-        final nomeLogo = arquivosLogo[id];
-        final arquivoLogo = nomeLogo == null ? null : File('${pastaLogos.path}/$nomeLogo');
-        resultado.add(Colecao(
-          nome: _nomePasta(pasta),
-          pasta: pasta,
-          cartas: cartas,
-          logo: arquivoLogo != null && await arquivoLogo.exists() ? arquivoLogo : null,
-          ano: anosCatalogo[id] ?? RegExp(r'(?:19|20)\d{2}').firstMatch(_nomePasta(pasta))?.group(0),
-        ));
+        final id = idDaPasta(pasta); final logoNome = arquivosLogo[id];
+        final logo = logoNome == null ? null : File('${pastaLogos.path}/$logoNome');
+        resultado.add(Colecao(nome: _nomePasta(pasta), pasta: pasta, cartas: const <Carta>[], logo: logo != null && await logo.exists() ? logo : null, ano: anosCatalogo[id] ?? RegExp(r'(?:19|20)\d{2}').firstMatch(_nomePasta(pasta))?.group(0), totalCartas: quantidades[id] ?? 0));
       }
-
-      if (mounted) {
-        setState(() {
-          colecoes = resultado;
-          if (colecaoSelecionada != null) {
-            final caminhoSelecionado = colecaoSelecionada!.pasta.path;
-            Colecao? encontrada;
-            for (final item in resultado) {
-              if (item.pasta.path == caminhoSelecionado) {
-                encontrada = item;
-                break;
-              }
-            }
-            colecaoSelecionada = encontrada;
-          }
-          carregando = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          erroMsg = 'Erro ao carregar coleções: $e';
-          carregando = false;
-        });
-      }
-    }
+      if (!mounted) return;
+      setState(() { colecoes = resultado; colecaoSelecionada = null; _cartasPorColecao.clear(); carregando = false; });
+    } catch (e) { if (mounted) setState(() { erroMsg = 'Erro ao carregar coleções: $e'; carregando = false; }); }
   }
-
 
   Future<Map<String, Map<String, dynamic>>> _carregarIndiceCartas() async {
+    if (_indiceCartasCache != null) return _indiceCartasCache!;
+    final conteudo = await rootBundle.loadString('assets/data/dados_cartas.json');
+    final json = jsonDecode(conteudo);
     final resultado = <String, Map<String, dynamic>>{};
-    try {
-      final conteudo = await rootBundle.loadString('assets/data/dados_cartas.json');
-      final json = jsonDecode(conteudo);
-      if (json is Map && json['cards'] is List) {
-        for (final item in json['cards']) {
-          if (item is Map) {
-            final id = item['collectionId']?.toString();
-            final arquivo = item['file']?.toString();
-            if (id != null && arquivo != null && arquivo.isNotEmpty) {
-              resultado['$id|${_normalizarChave(arquivo)}'] =
-                  Map<String, dynamic>.from(item);
-            }
-          }
-        }
-      }
-    } catch (_) {}
-    return resultado;
+    if (json is Map && json['cards'] is List) for (final item in json['cards']) {
+      if (item is Map) { final id = item['collectionId']?.toString(); final arquivo = item['file']?.toString(); if (id != null && arquivo != null && arquivo.isNotEmpty) resultado['$id|${_normalizarChave(arquivo)}'] = Map<String, dynamic>.from(item); }
+    }
+    _indiceCartasCache = resultado; return resultado;
   }
 
+  Future<List<Carta>> _carregarCartasDaColecao(Colecao colecao) async {
+    final id = colecao.nome.split('_').first;
+    if (_cartasPorColecao.containsKey(id)) return _cartasPorColecao[id]!;
+    final indice = await _carregarIndiceCartas(); final cartas = <Carta>[];
+    final nomeColecao = colecao.nome.replaceFirst(RegExp(r'^\d+_'), '').replaceAll('_', ' ');
+    await for (final item in colecao.pasta.list(recursive: true, followLinks: false)) {
+      if (item is! File) continue;
+      final nomeArquivo = item.uri.pathSegments.isNotEmpty ? item.uri.pathSegments.last : item.path.split(Platform.pathSeparator).last;
+      final ponto = nomeArquivo.lastIndexOf('.'); final ext = ponto >= 0 ? nomeArquivo.substring(ponto).toLowerCase() : '';
+      if (!extensoesImagem.contains(ext)) continue;
+      final dados = indice['$id|${_normalizarChave(nomeArquivo)}'];
+      if (dados == null || dados['collectionId']?.toString() != id || _normalizarChave(dados['file']?.toString() ?? '') != _normalizarChave(nomeArquivo)) continue;
+      cartas.add(Carta(nome: ponto > 0 ? nomeArquivo.substring(0, ponto) : nomeArquivo, arquivo: item, dados: dados, collectionName: nomeColecao, collectionId: id));
+    }
+    _ordenarCartas(cartas); _cartasPorColecao[id] = cartas; return cartas;
+  }
+
+  Future<void> _abrirColecao(Colecao colecao) async {
+    if (carregandoColecao) return;
+    setState(() => carregandoColecao = true);
+    try {
+      final cartas = await _carregarCartasDaColecao(colecao);
+      if (!mounted) return;
+      setState(() { colecaoSelecionada = Colecao(nome: colecao.nome, pasta: colecao.pasta, cartas: cartas, logo: colecao.logo, ano: colecao.ano, totalCartas: colecao.totalCartas); carregandoColecao = false; });
+    } catch (e) { if (mounted) setState(() { carregandoColecao = false; erroMsg = 'Erro ao abrir coleção: $e'; }); }
+  }
   String _normalizarChave(String valor) => valor
       .toLowerCase()
       .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
@@ -654,7 +542,8 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   }
 
   Future<void> _abrirBuscaGlobal() async {
-    final todasCartas = colecoes.expand((c) => c.cartas).toList();
+    final todasCartas = <Carta>[];
+    for (final colecao in colecoes) { todasCartas.addAll(await _carregarCartasDaColecao(colecao)); }
     final controller = TextEditingController();
     var categoriaSelecionada = 'Todos';
 
@@ -902,7 +791,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
               icon: const Icon(Icons.search),
               label: const Text('Buscar coleção'),
             ),
-      body: carregando
+      body: carregando || carregandoColecao
           ? const Center(child: CircularProgressIndicator())
           : erroMsg.isNotEmpty
               ? Center(
@@ -943,7 +832,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                             _catalogoScrollOffset = _catalogoScrollController.hasClients
                                 ? _catalogoScrollController.offset
                                 : _catalogoScrollOffset;
-                            setState(() => colecaoSelecionada = item);
+                            _abrirColecao(item);
                           },
                           child: Card(
                             margin: EdgeInsets.zero,
@@ -970,7 +859,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                                     textAlign: TextAlign.center,
                                     style: const TextStyle(fontWeight: FontWeight.w600),
                                   ),
-                                  Text('${item.cartas.length} cartas',
+                                  Text('${item.totalCartas} cartas',
                                       style: Theme.of(context).textTheme.bodySmall),
                                 ],
                               ),
