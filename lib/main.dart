@@ -13,7 +13,7 @@ final ValueNotifier<bool> modoEscuroGlobal = ValueNotifier<bool>(false);
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final preferencias = await SharedPreferences.getInstance();
-  modoEscuroGlobal.value = preferencias.getBool('modo_escuro') ?? false;
+  modoEscuroGlobal.value = preferencias.getBool('modo_escuro') ?? true;
   runApp(const PokemonTcgApp());
 }
 
@@ -138,6 +138,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
 
   Map<String, Map<String, dynamic>>? _indiceCartasCache;
   final Map<String, List<Carta>> _cartasPorColecao = {};
+  final Map<String, int> _ordemLancamentoColecoes = {};
 
   Future<void> carregarColecoes() async {
     setState(() { carregando = true; erroMsg = ''; });
@@ -159,6 +160,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       final arquivosLogo = <String, String>{};
       final ordemCatalogo = <String, int>{};
       final anosCatalogo = <String, String>{};
+      _ordemLancamentoColecoes.clear();
       final arquivoCatalogo = File('${pastaLogos.path}/catalogo.json');
       if (await arquivoCatalogo.exists()) {
         final dados = jsonDecode(await arquivoCatalogo.readAsString());
@@ -167,7 +169,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
           if (item is Map) {
             final id = item['id']?.toString(); final nomeArquivo = item['arquivo']?.toString();
             if (id != null && id.isNotEmpty && nomeArquivo != null) {
-              arquivosLogo[id] = nomeArquivo; ordemCatalogo[id] = i;
+              arquivosLogo[id] = nomeArquivo; ordemCatalogo[id] = i; _ordemLancamentoColecoes[id] = i;
               final anoRaw = item['ano'] ?? item['year'] ?? item['releaseYear'] ?? item['releaseDate'];
               final match = RegExp(r'(?:19|20)\d{2}').firstMatch(anoRaw?.toString() ?? '');
               if (match != null) anosCatalogo[id] = match.group(0)!;
@@ -442,17 +444,45 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   }
 
   String _categoriaDaCarta(Carta carta) {
-    // supertype/trainerSubtype foram gravados incorretamente como Trainer/Stadium
-    // em todas as 27.160 entradas; não usar esses campos até reindexar a origem.
-    final stage = _normalizarChave(_texto(carta.dados, 'stage'));
+    final dados = carta.dados ?? const <String, dynamic>{};
+    final stage = _normalizarChave(_texto(dados, 'stage'));
     const estagiosPokemon = {
       'basic', 'stage 1', 'stage 2', 'vmax', 'vstar',
       'level up', 'break', 'legend', 'v union', 'restored',
     };
-    final nome = _normalizarChave(carta.nome);
-    if (estagiosPokemon.contains(stage) && !nome.endsWith(' energy')) return 'Pokémon';
-    if (nome.endsWith(' energy')) return 'Energia';
-    return 'Treinador / não identificado';
+    final supertype = _normalizarChave(_texto(dados, 'supertype'));
+    final trainerSubtype = _normalizarChave(_texto(dados, 'trainerSubtype'));
+    final energyCategory = _normalizarChave(_texto(dados, 'energyCategory'));
+    final nome = _normalizarChave(_texto(dados, 'name').isNotEmpty
+        ? _texto(dados, 'name') : carta.nome);
+    if (energyCategory.isNotEmpty || nome.endsWith(' energy') ||
+        supertype == 'energy') return 'Energia';
+    if (estagiosPokemon.contains(stage) ||
+        _texto(dados, 'evolvesFrom').trim().isNotEmpty ||
+        supertype == 'pokemon' || supertype == 'pokemon card') return 'Pokémon';
+    if (trainerSubtype.isNotEmpty || supertype == 'trainer') return 'Treinador';
+    return 'Não identificado';
+  }
+
+  int _ordemDaCarta(Carta carta) =>
+      _ordemLancamentoColecoes[carta.collectionId] ?? 999999;
+
+  int _numeroDaCarta(Carta carta) {
+    final valor = carta.dados?['numberSort'];
+    if (valor is num) return valor.toInt();
+    final match = RegExp(r'^\\d+').firstMatch(_texto(carta.dados, 'number'));
+    return match == null ? 999999 : int.tryParse(match.group(0)!) ?? 999999;
+  }
+
+  void _ordenarResultadosPorLancamento(List<Carta> cartas) {
+    cartas.sort((a, b) {
+      final ordem = _ordemDaCarta(a).compareTo(_ordemDaCarta(b));
+      if (ordem != 0) return ordem;
+      final numero = _numeroDaCarta(a).compareTo(_numeroDaCarta(b));
+      if (numero != 0) return numero;
+      return _texto(a.dados, 'name').toLowerCase()
+          .compareTo(_texto(b.dados, 'name').toLowerCase());
+    });
   }
 
   String _raridadeDaCarta(Carta carta) {
@@ -549,21 +579,48 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
 
     List<Carta> buscar(String texto) {
       final termo = _normalizarChave(texto);
-      return todasCartas.where((carta) {
+      if (termo.isEmpty) return <Carta>[];
+
+      const tiposConhecidos = {
+        'grass', 'grama', 'planta', 'fire', 'fogo', 'water', 'agua',
+        'lightning', 'eletrico', 'raios', 'psychic', 'psiquico',
+        'fighting', 'lutador', 'darkness', 'sombrio', 'noturno',
+        'metal', 'metalico', 'fairy', 'fada', 'dragon', 'dragao',
+        'colorless', 'incolor',
+      };
+      final ehBuscaTipo = tiposConhecidos.contains(termo);
+      final ehBuscaNumero = RegExp(r'^\\d+(?:\\s*/\\s*\\d+)?$').hasMatch(texto.trim());
+      final resultados = todasCartas.where((carta) {
+        final categoria = _categoriaDaCarta(carta);
         if (categoriaSelecionada != 'Todos' &&
-            _categoriaDaCarta(carta) != categoriaSelecionada) return false;
-        if (termo.isEmpty) return false;
-        final campos = [
-          carta.nome,
-          _texto(carta.dados, 'name'),
-          _texto(carta.dados, 'number'),
-          _texto(carta.dados, 'pokemon'),
-          _texto(carta.dados, 'collectionName'),
-          carta.collectionName,
-          ..._tiposDaCarta(carta),
-        ];
-        return campos.any((campo) => _normalizarChave(campo).contains(termo));
+            categoria != categoriaSelecionada) return false;
+
+        if (ehBuscaTipo) {
+          final tipoCarta = _tiposDaCarta(carta)
+              .any((tipo) => _tipoCanonico(tipo) == _tipoCanonico(termo));
+          // Uma busca por tipo não deve retornar Treinadores ou cartas sem tipo.
+          return (categoria == 'Pokémon' || categoria == 'Energia') && tipoCarta;
+        }
+
+        if (ehBuscaNumero) {
+          final numero = _normalizarChave(_texto(carta.dados, 'number'));
+          return numero == termo ||
+              numero.startsWith('$termo ') ||
+              numero.startsWith('$termo/');
+        }
+
+        final nome = _normalizarChave(
+          _texto(carta.dados, 'name').isNotEmpty
+              ? _texto(carta.dados, 'name')
+              : carta.nome,
+        );
+        final colecao = _normalizarChave(carta.collectionName);
+        // Em buscas por nome, somente o nome real da carta é considerado.
+        // O nome da coleção é aceito apenas quando o termo corresponde a ele.
+        return nome.contains(termo) || colecao.contains(termo);
       }).toList();
+      _ordenarResultadosPorLancamento(resultados);
+      return resultados;
     }
 
     Future<void> abrirResultados(
