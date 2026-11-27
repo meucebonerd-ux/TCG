@@ -14,3 +14,8 @@ dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/data/
+    - assets/images/cards/
+    - assets/images/collections/
+    - assets/images/logos/
