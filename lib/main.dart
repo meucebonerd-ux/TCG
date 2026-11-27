@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 const String raizColecoes = '/sdcard/meuapp/tcg físico';
@@ -276,10 +277,9 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
 
   Future<Map<String, Map<String, dynamic>>> _carregarIndiceCartas() async {
     final resultado = <String, Map<String, dynamic>>{};
-    final arquivo = File('/sdcard/meuapp/dados_cartas.json');
-    if (!await arquivo.exists()) return resultado;
     try {
-      final json = jsonDecode(await arquivo.readAsString());
+      final conteudo = await rootBundle.loadString('assets/data/dados_cartas.json');
+      final json = jsonDecode(conteudo);
       if (json is Map && json['cards'] is List) {
         for (final item in json['cards']) {
           if (item is Map) {
