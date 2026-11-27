@@ -603,8 +603,39 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   }
 
   Future<void> _abrirBuscaGlobal() async {
+    // A pesquisa é construída diretamente do índice completo, nunca da lista
+    // de pastas/imagens disponíveis no dispositivo.
+    final indiceCompleto = await _carregarIndiceCartas();
+    final colecoesPorId = <String, Colecao>{
+      for (final colecao in colecoes) colecao.nome.split('_').first: colecao,
+    };
+    final cartasComImagem = <String, Carta>{};
+    for (final cartas in _cartasPorColecao.values) {
+      for (final carta in cartas) {
+        final arquivo = _texto(carta.dados, 'file');
+        cartasComImagem['${carta.collectionId}|${_normalizarChave(arquivo)}'] = carta;
+      }
+    }
     final todasCartas = <Carta>[];
-    for (final colecao in colecoes) { todasCartas.addAll(await _carregarCartasDaColecao(colecao)); }
+    for (final entry in indiceCompleto.entries) {
+      final dados = entry.value;
+      final id = _texto(dados, 'collectionId');
+      final arquivo = _texto(dados, 'file').trim();
+      if (id.isEmpty || arquivo.isEmpty) continue;
+      final existente = cartasComImagem['$id|${_normalizarChave(arquivo)}'];
+      final colecao = colecoesPorId[id];
+      final nome = _texto(dados, 'name').trim();
+      final nomeColecao = _texto(dados, 'collectionName').trim();
+      todasCartas.add(existente ?? Carta(
+        nome: nome.isNotEmpty ? nome : arquivo,
+        arquivo: File('/__tcg_missing_image__/$arquivo'),
+        dados: dados,
+        collectionName: nomeColecao.isNotEmpty
+            ? nomeColecao
+            : (colecao?.nome.replaceFirst(RegExp(r'^\\d+_'), '').replaceAll('_', ' ') ?? ''),
+        collectionId: id,
+      ));
+    }
     final controller = TextEditingController();
     var categoriaSelecionada = 'Todos';
 
