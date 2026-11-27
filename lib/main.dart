@@ -515,9 +515,12 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       if (raridade.isNotEmpty) raridades.add(raridade);
       categorias.add(_categoriaDaCarta(carta));
     }
-    var tipo = filtroTipo;
-    var raridade = filtroRaridade;
-    var categoria = filtroCategoria;
+    final tiposOrdenados = tipos.toList()..sort();
+    final raridadesOrdenadas = raridades.toList()..sort();
+    final categoriasOrdenadas = categorias.toList()..sort();
+    var tipo = tipos.contains(filtroTipo) ? filtroTipo : 'Todos';
+    var raridade = raridades.contains(filtroRaridade) ? filtroRaridade : 'Todas';
+    var categoria = categorias.contains(filtroCategoria) ? filtroCategoria : 'Todas';
     await showModalBottomSheet<void>(
       context: context, isScrollControlled: true, showDragHandle: true,
       builder: (sheetContext) => StatefulBuilder(
@@ -530,14 +533,14 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
               DropdownButtonFormField<String>(
                 value: tipo, isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Tipo', border: OutlineInputBorder()),
-                items: ['Todos', ...tipos.toList()..sort()].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+                items: ['Todos', ...tiposOrdenados].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
                 onChanged: (v) => atualizar(() => tipo = v ?? 'Todos'),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: raridade, isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Raridade', border: OutlineInputBorder()),
-                items: ['Todas', ...raridades.toList()..sort()].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+                items: ['Todas', ...raridadesOrdenadas].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
                 onChanged: raridades.isEmpty ? null : (v) => atualizar(() => raridade = v ?? 'Todas'),
               ),
               if (raridades.isEmpty)
@@ -546,7 +549,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
               DropdownButtonFormField<String>(
                 value: categoria, isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Categoria', border: OutlineInputBorder()),
-                items: ['Todas', ...categorias.toList()..sort()].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+                items: ['Todas', ...categoriasOrdenadas].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
                 onChanged: (v) => atualizar(() => categoria = v ?? 'Todas'),
               ),
               const SizedBox(height: 16),
