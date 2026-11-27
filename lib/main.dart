@@ -599,19 +599,17 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         return nomeCorresponde(carta);
       }).toList();
 
-      int anoDaCarta(Carta carta) {
-        final colecao = colecoes.where((item) => item.nome == carta.collectionName);
-        return colecao.isEmpty ? 9999 : int.tryParse(colecao.first.ano ?? '') ?? 9999;
+      int ordemColecao(Carta carta) {
+        final indice = colecoes.indexWhere((item) => item.nome == carta.collectionName);
+        return indice < 0 ? 999999 : indice;
       }
       int numeroDaCarta(Carta carta) {
         final numero = _texto(carta.dados, 'number');
         return int.tryParse(RegExp(r'^\\d+').firstMatch(numero)?.group(0) ?? '') ?? 999999;
       }
       resultados.sort((a, b) {
-        final ano = anoDaCarta(a).compareTo(anoDaCarta(b));
-        if (ano != 0) return ano;
-        final colecao = a.collectionName.compareTo(b.collectionName);
-        if (colecao != 0) return colecao;
+        final lancamento = ordemColecao(a).compareTo(ordemColecao(b));
+        if (lancamento != 0) return lancamento;
         return numeroDaCarta(a).compareTo(numeroDaCarta(b));
       });
       return resultados;
