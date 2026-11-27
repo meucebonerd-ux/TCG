@@ -1,12 +1,6 @@
 name: Indexar Delta Reign e gerar APK
 
 on:
-  push:
-    branches: ["main"]
-    paths:
-      - "scripts/indexar-delta-reign.mjs"
-      - "lib/main.dart"
-      - ".github/workflows/indexar_delta_reign.yml"
   workflow_dispatch:
 
 permissions:
@@ -15,12 +9,10 @@ permissions:
 jobs:
   indexar-e-compilar:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Baixar projeto
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Preparar Node.js
         uses: actions/setup-node@v4
@@ -30,10 +22,15 @@ jobs:
       - name: Instalar parser HTML
         run: npm install --no-save cheerio@1.0.0-rc.12
 
-      - name: Indexar as 141 cartas Delta Reign
+      - name: Indexar Delta Reign no TCG Collector
+        env:
+          COLLECTION_ID: "111247"
+          COLLECTION_NAME: "Delta Reign"
+          COLLECTION_SLUG: "delta-reign"
+          EXPECTED_COUNT: "141"
         run: node scripts/indexar-delta-reign.mjs
 
-      - name: Salvar índice no GitHub
+      - name: Salvar índice atualizado
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -41,7 +38,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "O índice já estava atualizado."
           else
-            git commit -m "Adiciona as 141 cartas de Delta Reign ao índice"
+            git commit -m "Adiciona Delta Reign ao índice local"
             git push
           fi
 
