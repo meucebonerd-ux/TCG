@@ -1,11 +1,6 @@
 name: Reconstruir Delta Reign e gerar APK
 
 on:
-  push:
-    branches: ["fix/legacy-order-global-search"]
-    paths:
-      - "scripts/indexar-delta-reign.mjs"
-      - ".github/workflows/indexar_delta_reign.yml"
   workflow_dispatch:
     inputs:
       collection_id:
