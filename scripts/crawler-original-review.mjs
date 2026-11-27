@@ -454,74 +454,139 @@ async function processSet(set) {
 }
 
 async function indexExistingCollections() {
+  // Três trabalhadores independentes: acelera sem sobrecarregar o Android
+  // nem compartilhar reinicializações do GhostClient entre requisições.
+  const CONCURRENCY = 3;
+  const REQUEST_GAP = 900;
   const roots = [OUTPUT, "/sdcard/meuapp/tcg fisico", "/sdcard/Download/TCG_Collector"]
     .filter(root => fs.existsSync(root));
-  const folders = roots.flatMap(root =>
-    fs.readdirSync(root, { withFileTypes: true })
-      .filter(entry => entry.isDirectory() && entry.name !== "estado")
-      .map(entry => ({ name: entry.name, path: path.join(root, entry.name) }))
-  );
+
+  const foldersById = new Map();
+  for (const root of roots) {
+    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name === "estado") continue;
+      const folder = path.join(root, entry.name);
+      const manifest = path.join(folder, "cartas.json");
+      if (!fs.existsSync(manifest)) continue;
+      try {
+        const data = JSON.parse(fs.readFileSync(manifest, "utf8"));
+        const id = String(data.id || entry.name.split("_")[0]);
+        if (!foldersById.has(id)) {
+          foldersById.set(id, { folder, data, name: data.name || entry.name });
+        }
+      } catch (error) {
+        console.log("Manifesto inválido: " + manifest + " — " + error.message);
+      }
+    }
+  }
+
+  const tasks = [];
+  for (const [id, item] of foldersById) {
+    const set = { id, name: item.name };
+    const files = fs.readdirSync(item.folder);
+    const urls = Array.isArray(item.data.cards) ? item.data.cards : [];
+    for (const cardUrl of urls) {
+      try {
+        const slug = safeName(new URL(cardUrl).pathname.split("/").filter(Boolean).pop());
+        const existing = cardIndex.get(id + "|" + slug);
+        // Não refaz consultas já concluídas; tenta novamente apenas dados incompletos.
+        if (existing && !existing.needsReview && existing.supertype !== "Unknown") continue;
+        const filename = files.find(name => name.startsWith(slug + "__")) || null;
+        tasks.push({ set, cardUrl, slug, filename });
+      } catch {}
+    }
+  }
+
+  console.log("Coleções únicas encontradas: " + foldersById.size);
+  console.log("Cartas que precisam de indexação/verificação: " + tasks.length);
+  console.log("Concorrência: " + CONCURRENCY + " requisições simultâneas.");
+
+  let cursor = 0;
   let processed = 0;
   let errors = 0;
 
-  for (const folderEntry of folders) {
-    const folder = folderEntry.path;
-    const manifest = path.join(folder, "cartas.json");
-    if (!fs.existsSync(manifest)) continue;
+  async function worker(workerId) {
+    let workerClient = new GhostClient({
+      browser: "Chrome_131",
+      timeout: 90000
+    });
 
-    let data;
-    try { data = JSON.parse(fs.readFileSync(manifest, "utf8")); }
-    catch (error) {
-      console.log("Manifesto inválido: " + manifest + " — " + error.message);
-      errors++;
-      continue;
-    }
-
-    const set = { id: String(data.id || folderEntry.name.split("_")[0]), name: data.name || folderEntry.name };
-    const urls = Array.isArray(data.cards) ? data.cards : [];
-    const files = fs.readdirSync(folder);
-    console.log("\\nINDEXANDO " + set.name + " (" + urls.length + " cartas)");
-
-    for (let i = 0; i < urls.length; i++) {
-      const cardUrl = urls[i];
-      try {
-        const slug = safeName(new URL(cardUrl).pathname.split("/").filter(Boolean).pop());
-        const filename = files.find(name => name.startsWith(slug + "__")) || null;
-        const html = await getHtml(cardUrl);
-        const metadata = extractCardMetadata(html, cardUrl, set, filename);
-        cardIndex.set(set.id + "|" + slug, metadata);
-        processed++;
-        if (processed % 10 === 0) {
-          saveCardIndex();
-          console.log("  Metadados processados: " + processed);
+    async function workerHtml(url) {
+      let attempt = 0;
+      while (true) {
+        attempt++;
+        try {
+          const response = await workerClient.fetch(url, {
+            headers: { Referer: BASE + "/" }
+          });
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          return await response.text();
+        } catch (error) {
+          console.log("[Worker " + workerId + "] tentativa " + attempt +
+            " falhou: " + error.message + ". Reiniciando em 5 segundos.");
+          try { await workerClient.destroy(); } catch {}
+          await sleep(5000);
+          workerClient = new GhostClient({
+            browser: "Chrome_131",
+            timeout: 90000
+          });
         }
-      } catch (error) {
-        errors++;
-        console.log("  ERRO " + cardUrl + ": " + error.message);
       }
-      await sleep(WAIT);
     }
-    saveCardIndex();
+
+    try {
+      while (true) {
+        const taskIndex = cursor++;
+        if (taskIndex >= tasks.length) break;
+        const task = tasks[taskIndex];
+
+        try {
+          const html = await workerHtml(task.cardUrl);
+          const metadata = extractCardMetadata(
+            html, task.cardUrl, task.set, task.filename
+          );
+          cardIndex.set(task.set.id + "|" + task.slug, metadata);
+          processed++;
+
+          if (processed % 10 === 0) {
+            saveCardIndex();
+            console.log("Metadados processados nesta execução: " + processed +
+              " | total no índice: " + cardIndex.size);
+          }
+        } catch (error) {
+          errors++;
+          console.log("[Worker " + workerId + "] ERRO " +
+            task.cardUrl + ": " + error.message);
+        }
+
+        await sleep(REQUEST_GAP);
+      }
+    } finally {
+      try { await workerClient.destroy(); } catch {}
+    }
   }
+
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, tasks.length) }, (_, i) => worker(i + 1))
+  );
 
   saveCardIndex();
   const cards = [...cardIndex.values()];
   const report = {
     generatedAt: new Date().toISOString(),
-    collections: folders.length,
+    collections: foldersById.size,
     indexedCards: cards.length,
     processedThisRun: processed,
-    needsReview: cards.filter(card => card.needsReview).length,
+    pendingReview: cards.filter(card => card.needsReview).length,
     errors
   };
   const reportPath = path.join(STATE, "relatorio_indice_cartas.json");
   fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
-  console.log("\\nÍNDICE FINALIZADO");
+  console.log("\nÍNDICE FINALIZADO");
   console.log(JSON.stringify(report, null, 2));
   console.log("Índice: " + INDEX_ANDROID);
   console.log("Cópia local: " + INDEX_LOCAL);
 }
-
 async function main() {
   if (process.argv.includes("--index-existing")) {
     try { await indexExistingCollections(); }
