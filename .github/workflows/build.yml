@@ -11,6 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate indexer JavaScript syntax
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check scripts/indexar-delta-reign.mjs
+
       - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
