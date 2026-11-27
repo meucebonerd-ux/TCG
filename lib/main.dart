@@ -589,7 +589,581 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         'colorless', 'incolor',
       };
       final ehBuscaTipo = tiposConhecidos.contains(termo);
-      final ehBuscaNumero = RegExp(r'^\\d+(?:\\s*/\\s*\\d+)?$').hasMatch(texto.trim());
+      final ehBuscaNumero = RegExp(r'^\\d+(?:\\s*/\\s*\\d+)?
+        final categoria = _categoriaDaCarta(carta);
+        if (categoriaSelecionada != 'Todos' &&
+            categoria != categoriaSelecionada) return false;
+
+        if (ehBuscaTipo) {
+          final tipoCarta = _tiposDaCarta(carta)
+              .any((tipo) => _tipoCanonico(tipo) == _tipoCanonico(termo));
+          // Uma busca por tipo não deve retornar Treinadores ou cartas sem tipo.
+          return (categoria == 'Pokémon' || categoria == 'Energia') && tipoCarta;
+        }
+
+        if (ehBuscaNumero) {
+          final numero = _normalizarChave(_texto(carta.dados, 'number'));
+          return numero == termo ||
+              numero.startsWith('$termo ') ||
+              numero.startsWith('$termo/');
+        }
+
+        if (existePokemonComEsseNome && categoria != 'Pokémon') return false;
+
+        final nome = _normalizarChave(
+          _texto(carta.dados, 'name').isNotEmpty
+              ? _texto(carta.dados, 'name')
+              : carta.nome,
+        );
+        final colecao = _normalizarChave(carta.collectionName);
+        // Em buscas por nome, somente o nome real da carta é considerado.
+        // O nome da coleção é aceito apenas quando o termo corresponde a ele.
+        return nome.contains(termo) || colecao.contains(termo);
+      }).toList();
+      _ordenarResultadosPorLancamento(resultados);
+      return resultados;
+    }
+
+    Future<void> abrirResultados(
+      BuildContext sheetContext,
+      List<Carta> resultados,
+    ) async {
+      final termo = controller.text.trim();
+      if (termo.isEmpty || resultados.isEmpty) return;
+      Navigator.pop(sheetContext);
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => BuscaGlobalResultadosScreen(
+            termo: termo,
+            cartas: resultados,
+          ),
+        ),
+      );
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, atualizar) {
+          final resultados = buscar(controller.text);
+          final categorias =
+              todasCartas.map(_categoriaDaCarta).toSet().toList()..sort();
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                16, 8, 16,
+                MediaQuery.of(sheetContext).viewInsets.bottom + 16,
+              ),
+              child: SizedBox(
+                height: MediaQuery.of(sheetContext).size.height * .82,
+                child: Column(children: [
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Pesquisa global de cartas',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    textInputAction: TextInputAction.search,
+                    onChanged: (_) => atualizar(() {}),
+                    onSubmitted: (_) => abrirResultados(sheetContext, resultados),
+                    decoration: InputDecoration(
+                      hintText: 'Nome, número, Pokémon, tipo ou coleção',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: controller.text.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: 'Mostrar resultados',
+                              icon: const Icon(Icons.arrow_forward),
+                              onPressed: () => abrirResultados(sheetContext, resultados),
+                            ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: categoriaSelecionada,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Categoria',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: ['Todos', ...categorias]
+                        .map((v) => DropdownMenuItem(value: v, child: Text(v)))
+                        .toList(),
+                    onChanged: (v) => atualizar(
+                      () => categoriaSelecionada = v ?? 'Todos',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      controller.text.trim().isEmpty
+                          ? 'Digite para ver sugestões'
+                          : '${resultados.length} cartas encontradas',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Expanded(
+                    child: resultados.isEmpty
+                        ? Center(
+                            child: Text(
+                              controller.text.trim().isEmpty
+                                  ? 'As sugestões aparecerão aqui.'
+                                  : 'Nenhuma carta encontrada.',
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: resultados.length > 80 ? 80 : resultados.length,
+                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final carta = resultados[index];
+                              final numero = _texto(carta.dados, 'number');
+                              final tipos = _tiposDaCarta(carta).join(' • ');
+                              return ListTile(
+                                leading: SizedBox(
+                                  width: 48,
+                                  height: 64,
+                                  child: Image.file(
+                                    carta.arquivo,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) =>
+                                        const Icon(Icons.broken_image),
+                                  ),
+                                ),
+                                title: Text(
+                                  carta.nome,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                subtitle: Text(
+                                  '${carta.collectionName}'
+                                  '${numero.isEmpty ? '' : ' • $numero'}'
+                                  '${tipos.isEmpty ? '' : ' • $tipos'}',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                onTap: () {
+                                  Navigator.pop(sheetContext);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => CartaDetalheScreen(carta: carta),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                  if (resultados.length > 80)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Mostrando 80 sugestões. Pressione Enter para abrir todos os resultados.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: resultados.isEmpty
+                          ? null
+                          : () => abrirResultados(sheetContext, resultados),
+                      icon: const Icon(Icons.grid_view),
+                      label: const Text('Abrir resultados'),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    controller.dispose();
+  }
+
+  String _nomePasta(Directory pasta) {
+    final caminho = pasta.path.endsWith(Platform.pathSeparator)
+        ? pasta.path.substring(0, pasta.path.length - 1)
+        : pasta.path;
+    return caminho.split(Platform.pathSeparator).last;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selecionada = colecaoSelecionada;
+    final cartasExibidas = selecionada?.cartas.where(_cartaPassaFiltros).toList() ?? <Carta>[];
+
+    return WillPopScope(
+      onWillPop: () async {
+        if (colecaoSelecionada != null) {
+          setState(() {
+            colecaoSelecionada = null;
+            filtroTipo = 'Todos';
+            filtroRaridade = 'Todas';
+            filtroCategoria = 'Todas';
+          });
+          _restaurarPosicaoCatalogo();
+          return false;
+        }
+        return true;
+      },
+      child: Scaffold(
+      appBar: AppBar(
+        title: Text(selecionada == null ? 'Cartas' : selecionada.nome),
+        actions: [
+          IconButton(tooltip: 'Pesquisa global', onPressed: colecoes.isEmpty ? null : _abrirBuscaGlobal, icon: const Icon(Icons.manage_search)),
+          if (selecionada != null)
+            IconButton(tooltip: 'Filtrar cartas', onPressed: _abrirFiltrosColecao, icon: const Icon(Icons.filter_list)),
+          ValueListenableBuilder<bool>(
+            valueListenable: modoEscuroGlobal,
+            builder: (context, escuro, _) => IconButton(
+              tooltip: escuro ? 'Ativar modo claro' : 'Ativar modo escuro',
+              onPressed: () async {
+                final novoTema = !escuro;
+                modoEscuroGlobal.value = novoTema;
+                final preferencias = await SharedPreferences.getInstance();
+                await preferencias.setBool('modo_escuro', novoTema);
+              },
+              icon: Icon(escuro ? Icons.light_mode : Icons.dark_mode)),
+          ),
+          IconButton(tooltip: 'Atualizar', onPressed: carregarColecoes, icon: const Icon(Icons.refresh)),
+        ],
+      ),
+      floatingActionButton: carregando || erroMsg.isNotEmpty || colecoes.isEmpty
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _abrirBuscaColecao,
+              icon: const Icon(Icons.search),
+              label: const Text('Buscar coleção'),
+            ),
+      body: carregando || carregandoColecao
+          ? const Center(child: CircularProgressIndicator())
+          : erroMsg.isNotEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.error_outline, size: 42),
+                        const SizedBox(height: 12),
+                        Text(erroMsg, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: carregarColecoes,
+                          child: const Text('Tentar novamente'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : selecionada == null
+                  ? GridView.builder(
+                      key: const PageStorageKey<String>('catalogo-colecoes'),
+                      controller: _catalogoScrollController,
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        childAspectRatio: 1.18,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                      ),
+                      itemCount: colecoes.length,
+                      itemBuilder: (context, index) {
+                        final item = colecoes[index];
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () {
+                            _catalogoScrollOffset = _catalogoScrollController.hasClients
+                                ? _catalogoScrollController.offset
+                                : _catalogoScrollOffset;
+                            _abrirColecao(item);
+                          },
+                          child: Card(
+                            margin: EdgeInsets.zero,
+                            clipBehavior: Clip.antiAlias,
+                            child: Padding(
+                              padding: const EdgeInsets.all(10),
+                              child: Column(
+                                children: [
+                                  Expanded(
+                                    child: item.logo != null
+                                        ? Image.file(
+                                            item.logo!,
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (_, __, ___) =>
+                                                const Icon(Icons.collections_outlined, size: 42),
+                                          )
+                                        : const Icon(Icons.collections_outlined, size: 42),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    item.nome.replaceFirst(RegExp(r'^\d+_'), '').replaceAll('_', ' '),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                  ),
+                                  Text('${item.totalCartas} cartas',
+                                      style: Theme.of(context).textTheme.bodySmall),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    )
+                  : selecionada.cartas.isEmpty
+                      ? const Center(child: Text('Nenhuma imagem encontrada nesta coleção.'))
+                      : cartasExibidas.isEmpty
+                          ? const Center(child: Text('Nenhuma carta corresponde aos filtros.'))
+                          : Column(children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                                child: Row(children: [
+                                  Expanded(child: Text('${cartasExibidas.length} de ${selecionada.cartas.length} cartas')),
+                                  TextButton.icon(onPressed: _abrirFiltrosColecao, icon: const Icon(Icons.filter_list), label: const Text('Filtros')),
+                                ]),
+                              ),
+                              Expanded(child: GridView.builder(
+                          padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            childAspectRatio: 0.68,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
+                          ),
+                          itemCount: cartasExibidas.length,
+                          itemBuilder: (context, index) {
+                            final carta = cartasExibidas[index];
+                            return InkWell(
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => CartaDetalheScreen(carta: carta),
+                                ),
+                              ),
+                              child: Card(
+                                clipBehavior: Clip.antiAlias,
+                                child: Image.file(
+                                  carta.arquivo,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, __, ___) =>
+                                      const Icon(Icons.broken_image, size: 42),
+                                ),
+                              ),
+                            );
+                          },
+                        )),
+                              ]),
+    ),
+    );
+  }
+}
+
+class CartasScreen extends StatelessWidget {
+  final Colecao colecao;
+
+  const CartasScreen({super.key, required this.colecao});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(colecao.nome)),
+      body: colecao.cartas.isEmpty
+          ? const Center(child: Text('Nenhuma imagem encontrada nesta coleção.'))
+          : GridView.builder(
+              padding: const EdgeInsets.all(8),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 0.68,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemCount: colecao.cartas.length,
+              itemBuilder: (context, index) {
+                final carta = colecao.cartas[index];
+                return InkWell(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CartaDetalheScreen(carta: carta),
+                    ),
+                  ),
+                  child: Card(
+                    clipBehavior: Clip.antiAlias,
+                    child: Image.file(
+                      carta.arquivo,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.broken_image, size: 42),
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+class BuscaGlobalResultadosScreen extends StatelessWidget {
+  final String termo;
+  final List<Carta> cartas;
+
+  const BuscaGlobalResultadosScreen({
+    super.key,
+    required this.termo,
+    required this.cartas,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Resultados da busca'),
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '"$termo"',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                Text('${cartas.length} cartas'),
+              ],
+            ),
+          ),
+          Expanded(
+            child: GridView.builder(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 0.68,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemCount: cartas.length,
+              itemBuilder: (context, index) {
+                final carta = cartas[index];
+                return InkWell(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CartaDetalheScreen(carta: carta),
+                    ),
+                  ),
+                  child: Card(
+                    clipBehavior: Clip.antiAlias,
+                    child: Image.file(
+                      carta.arquivo,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.broken_image, size: 42),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class CartaDetalheScreen extends StatelessWidget {
+  final Carta carta;
+
+  const CartaDetalheScreen({super.key, required this.carta});
+
+  Future<void> copiarParaDownload(BuildContext context) async {
+    try {
+      final pastaDownload = Directory('/sdcard/Download');
+      if (!await pastaDownload.exists()) {
+        await pastaDownload.create(recursive: true);
+      }
+      final nomeArquivo = carta.arquivo.uri.pathSegments.last;
+      final destino = File('${pastaDownload.path}/$nomeArquivo');
+      await carta.arquivo.copy(destino.path);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Carta copiada para Downloads!')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao copiar: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(carta.nome)),
+      body: Column(
+        children: [
+          Expanded(
+            child: InteractiveViewer(
+              child: Center(
+                child: Image.file(
+                  carta.arquivo,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) =>
+                      const Icon(Icons.broken_image, size: 64),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: ElevatedButton.icon(
+              onPressed: () => copiarParaDownload(context),
+              icon: const Icon(Icons.download),
+              label: const Text('Copiar para Downloads'),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 50),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+).hasMatch(texto.trim());
+      final existePokemonComEsseNome = !ehBuscaTipo && !ehBuscaNumero && todasCartas.any((carta) {
+        if (_categoriaDaCarta(carta) != 'Pokémon') return false;
+        final nome = _normalizarChave(
+          _texto(carta.dados, 'name').isNotEmpty
+              ? _texto(carta.dados, 'name')
+              : carta.nome,
+        );
+        return nome.contains(termo);
+      });
       final resultados = todasCartas.where((carta) {
         final categoria = _categoriaDaCarta(carta);
         if (categoriaSelecionada != 'Todos' &&
