@@ -812,24 +812,18 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         collectionId: id,
       ));
     }
-    final chavesBusca = <String>{};
-    for (final carta in cartasPreparadas) {
-      final slug = _texto(carta.dados, 'slug').trim();
-      final arquivo = carta.arquivo.uri.pathSegments.isEmpty ? carta.arquivo.path.split(Platform.pathSeparator).last : carta.arquivo.uri.pathSegments.last;
-      final identificador = slug.isNotEmpty ? slug : _slugDoArquivoLocal(arquivo);
-      chavesBusca.add(carta.collectionId + '|' + _normalizarChave(identificador));
+    _cartasBuscaGlobalCache = cartasPreparadas;
     }
-    // Completa cartas sem metadados reaproveitando a varredura já feita.
-    for (final entry in imagensPorSlug.entries) {
-      if (chavesBusca.contains(entry.key)) continue;
-      final separador = entry.key.indexOf('|');
-      if (separador <= 0) continue;
-      final id = entry.key.substring(0, separador);
-      final slug = entry.key.substring(separador + 1);
-      final colecao = colecoesPorId[id];
-      if (colecao == null) continue;
-      final nomeArquivo = entry.value.uri.pathSegments.last;
-      final numeroMatch = RegExp(r'-(\d{1,4})-(\d{1,4})
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    await carregamento;
+    } catch (e) {
+      if (mounted && Navigator.of(context).canPop()) Navigator.of(context).pop();
+      await carregamento;
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível preparar a busca: $e')));
+      return;
+    }
+    final todasCartas = _cartasBuscaGlobalCache!;
     final categoriasBusca = todasCartas.map(_categoriaDaCarta).toSet().toList()..sort();
     final controller = TextEditingController();
     Timer? debounceBusca;
