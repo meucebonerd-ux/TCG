@@ -538,12 +538,23 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   String _texto(Map<String, dynamic>? dados, String chave) => (dados?[chave] ?? '').toString();
 
   List<String> _tiposDaCarta(Carta carta) {
-    // O índice antigo juntou tipo do Pokémon com custos de energia dos ataques.
-    // O primeiro item corresponde ao tipo principal; os demais não são tipos da carta.
     final value = carta.dados?['types'];
     if (value is List && value.isNotEmpty) {
-      final principal = value.first.toString().trim();
-      return principal.isEmpty ? <String>[] : <String>[principal];
+      final tipos = value.map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty).toList();
+      if (tipos.isEmpty) return <String>[];
+
+      // Em alguns índices antigos, o ícone da expansão foi capturado antes
+      // do tipo impresso da carta (ex.: Dragon em EX Dragon e Fire em
+      // EX FireRed & LeafGreen). Quando o primeiro tipo também identifica
+      // a coleção, descartamos só esse primeiro ícone.
+      final colecao = _normalizarChave(_texto(carta.dados, 'collectionName'));
+      final primeiro = _normalizarChave(tipos.first);
+      if (tipos.length > 1 && primeiro.isNotEmpty &&
+          colecao.contains(primeiro)) {
+        return <String>[tipos[1]];
+      }
+      return <String>[tipos.first];
     }
     final energy = _texto(carta.dados, 'energyType').trim();
     return energy.isEmpty ? <String>[] : <String>[energy];
