@@ -442,16 +442,39 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   }
 
   String _categoriaDaCarta(Carta carta) {
-    // supertype/trainerSubtype foram gravados incorretamente como Trainer/Stadium
-    // em todas as 27.160 entradas; não usar esses campos até reindexar a origem.
-    final stage = _normalizarChave(_texto(carta.dados, 'stage'));
+    // O supertype/trainerSubtype do índice histórico está incorreto em muitos
+    // registros. Identificamos Pokémon pelos campos próprios e Energia pelos
+    // campos de energia, sem depender de um único campo incompleto.
+    final dados = carta.dados ?? const <String, dynamic>{};
+    final nomeDados = _normalizarChave(_texto(dados, 'name'));
+    final nomeArquivo = _normalizarChave(carta.nome);
+    final nome = nomeDados.isNotEmpty ? nomeDados : nomeArquivo;
+
+    final energyType = _texto(dados, 'energyType').trim();
+    final energyCategory = _texto(dados, 'energyCategory').trim();
+    if (energyType.isNotEmpty ||
+        energyCategory.isNotEmpty ||
+        nome.endsWith(' energy') ||
+        nomeArquivo.endsWith(' energy')) {
+      return 'Energia';
+    }
+
+    final types = dados['types'];
+    final temTipoPokemon = types is List &&
+        types.isNotEmpty &&
+        types.first.toString().trim().isNotEmpty;
+    final stage = _normalizarChave(_texto(dados, 'stage'));
     const estagiosPokemon = {
       'basic', 'stage 1', 'stage 2', 'vmax', 'vstar',
       'level up', 'break', 'legend', 'v union', 'restored',
     };
-    final nome = _normalizarChave(carta.nome);
-    if (estagiosPokemon.contains(stage) && !nome.endsWith(' energy')) return 'Pokémon';
-    if (nome.endsWith(' energy')) return 'Energia';
+    final temEvolucaoPokemon = _texto(dados, 'evolvesFrom').trim().isNotEmpty;
+
+    if (temTipoPokemon ||
+        estagiosPokemon.contains(stage) ||
+        temEvolucaoPokemon) {
+      return 'Pokémon';
+    }
     return 'Treinador / não identificado';
   }
 
