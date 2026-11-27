@@ -90,7 +90,7 @@ function extractCollectorCards(html) {
 }
 
 function energyElementalType(name, types) {
-  const normalized = String(name ?? '').toLowerCase();
+  const normalized = String(name ?? '').toLowerCase().replace(/^basic\\s+/, '');
   return KNOWN_TYPES.find(type => normalized.startsWith(type.toLowerCase() + ' ')) ??
     (Array.isArray(types) ? types[0] ?? null : null);
 }
@@ -136,9 +136,14 @@ async function main() {
       const number = Number(card.localId ?? brief.localId);
       const types = Array.isArray(card.types) ? card.types : [];
       const isEnergy = card.category === 'Energy';
-      const energyCategory = isEnergy
-        ? (String(card.energyType ?? '').toLowerCase() === 'special' ? 'Special' : 'Basic')
-        : null;
+      // O campo energyType do catálogo pode vir como "Normal" mesmo em
+      // Energias Especiais ilustradas. Só é Básica quando o nome é exatamente
+      // "Grass Energy", "Basic Grass Energy" etc.; as demais são Especiais.
+      const normalizedEnergyName = String(card.name ?? '').normalize('NFD')
+        .replace(/[\\u0300-\\u036f]/g, '').trim().toLowerCase();
+      const isBasicEnergy = isEnergy &&
+        /^(?:basic )?(grass|fire|water|lightning|psychic|fighting|darkness|metal|fairy|dragon|colorless) energy$/.test(normalizedEnergyName);
+      const energyCategory = isEnergy ? (isBasicEnergy ? 'Basic' : 'Special') : null;
       const record = {
         collectionId: COLLECTION_ID,
         collectionName: COLLECTION_NAME,
@@ -153,9 +158,7 @@ async function main() {
         evolvesFrom: card.evolveFrom || null,
         trainerSubtype: card.trainerType || null,
         energyCategory,
-        energyType: isEnergy && energyCategory === 'Basic'
-          ? energyElementalType(card.name, types)
-          : null,
+        energyType: isBasicEnergy ? energyElementalType(card.name, types) : null,
         hp: card.hp ?? null,
         rarity: card.rarity || null,
         file: collector.slug,
