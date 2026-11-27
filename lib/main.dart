@@ -226,6 +226,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
 
     final indice = await _carregarIndiceCartas();
     final imagensPorNome = <String, File>{};
+    final imagensPorSlug = <String, File>{};
 
     // As imagens são opcionais: a ausência de um arquivo não pode remover
     // uma carta do catálogo nem da pesquisa global.
@@ -241,6 +242,12 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
           : '';
       if (!extensoesImagem.contains(ext)) continue;
       imagensPorNome[_normalizarChave(nomeArquivo)] = item;
+      // Os arquivos baixados pelo coletor usam o padrão slug__hash.ext.
+      // O índice remoto guarda o slug, sem depender do hash local.
+      final prefixoSlug = nomeArquivo.split('__').first;
+      if (prefixoSlug.isNotEmpty) {
+        imagensPorSlug[_normalizarChave(prefixoSlug)] = item;
+      }
     }
 
     final cartas = <Carta>[];
@@ -251,7 +258,11 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
 
       final nomeArquivo = _arquivoDaCarta(dados);
       if (nomeArquivo.isEmpty) continue;
-      final imagem = imagensPorNome[_normalizarChave(nomeArquivo)];
+      final slugCarta = _texto(dados, 'slug').trim();
+      final imagem = imagensPorNome[_normalizarChave(nomeArquivo)] ??
+          (slugCarta.isNotEmpty
+              ? imagensPorSlug[_normalizarChave(slugCarta)]
+              : null);
       final nomeDados = _texto(dados, 'name').trim();
       final nomeSemExtensao = nomeArquivo.contains('.')
           ? nomeArquivo.substring(0, nomeArquivo.lastIndexOf('.'))
