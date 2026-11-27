@@ -684,12 +684,19 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
           RegExp(r'^\d+(?:\s*/\s*\d+)?$').hasMatch(texto.trim());
 
       bool nomeCorresponde(Carta carta) {
-        final nomeDados = _normalizarChave(_texto(carta.dados, 'name'));
+        // Alguns registros antigos guardaram no campo "name" descrições
+        // entre parênteses (ex.: nome de deck ou Pokémon relacionado).
+        // Esse conteúdo não faz parte do nome da carta e não deve gerar match.
+        final nomeBruto = _texto(carta.dados, 'name');
+        final nomePrincipal = nomeBruto.replaceAll(RegExp(r'\\([^)]*\\)'), ' ');
+        final nomeDados = _normalizarChave(nomePrincipal);
+        // O slug identifica a carta pelo nome próprio e ajuda a recuperar
+        // registros cujo campo "name" foi contaminado no índice antigo.
+        final slug = _normalizarChave(_texto(carta.dados, 'slug'));
         final nomeArquivo = _normalizarChave(carta.nome);
-        // A busca textual usa somente o nome principal da carta.
-        // O campo legado "pokemon" pode conter associações amplas e gerar
-        // cartas intrusas que não possuem o termo no próprio nome.
-        return nomeDados.contains(termo) || nomeArquivo.contains(termo);
+        return nomeDados.contains(termo) ||
+            slug.contains(termo) ||
+            nomeArquivo.replaceAll(RegExp(r'\\([^)]*\\)'), ' ').contains(termo);
       }
 
       final existeColecaoComEsseNome = !ehBuscaTipo && !ehBuscaNumero &&
