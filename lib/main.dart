@@ -826,11 +826,14 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                     textInputAction: TextInputAction.search,
                     onChanged: (_) {
                       debounceBusca?.cancel();
-                      debounceBusca = Timer(const Duration(milliseconds: 300), () {
+                      debounceBusca = Timer(const Duration(milliseconds: 450), () {
                         atualizar(() { resultadosAtuais = buscar(controller.text); });
                       });
                     },
-                    onSubmitted: (_) => abrirResultados(sheetContext, resultados),
+                    onSubmitted: (_) {
+                      resultadosAtuais = buscar(controller.text);
+                      abrirResultados(sheetContext, resultadosAtuais);
+                    },
                     decoration: InputDecoration(
                       hintText: 'Nome, número, Pokémon, tipo ou coleção',
                       prefixIcon: const Icon(Icons.search),
