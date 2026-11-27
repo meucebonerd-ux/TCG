@@ -141,6 +141,15 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   final Map<String, List<Carta>> _cartasPorColecao = {};
   List<Carta>? _cartasBuscaGlobalCache;
 
+  Future<int> _contarImagensDaColecao(Directory pasta) async {
+    var total = 0;
+    await for (final item in pasta.list(recursive: true, followLinks: false)) {
+      if (item is! File) continue;
+      final nome = item.path.toLowerCase();
+      if (extensoesImagem.any((ext) => nome.endsWith(ext))) total++;
+    }
+    return total;
+  }
   Future<void> carregarColecoes() async {
     setState(() { carregando = true; erroMsg = ''; });
     try {
@@ -189,7 +198,9 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         final id = idDaPasta(pasta);
         final logoNome = arquivosLogo[id];
         final logo = logoNome == null ? null : File(pastaLogos.path + '/' + logoNome);
-        final totalIndice = quantidades[id] ?? 0;
+        var totalIndice = quantidades[id] ?? 0;
+        // Quando o JSON não tem os metadados de uma coleção, conta as imagens locais.
+        if (totalIndice == 0) totalIndice = await _contarImagensDaColecao(pasta);
         resultado.add(Colecao(
           nome: _nomePasta(pasta),
           pasta: pasta,
@@ -353,28 +364,26 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       .trim();
 
   void _ordenarCartas(List<Carta> cartas) {
-    ({String prefixo, int numero, String sufixo}) chaveNumero(Carta carta) {
+    int numero(Carta carta) {
+      final direto = carta.dados?['numberSort'];
+      if (direto is num) return direto.toInt();
       final bruto = _texto(carta.dados, 'number').toUpperCase().trim();
-      final match = RegExp(r'^(\D*)(\d+)(.*)$').firstMatch(bruto);
-      if (match == null) return (prefixo: bruto, numero: 999999, sufixo: '');
-      return (
-        prefixo: match.group(1)!.trim(),
-        numero: int.tryParse(match.group(2)!) ?? 999999,
-        sufixo: match.group(3)!.trim(),
-      );
+      final match = RegExp(r'\d+').firstMatch(bruto);
+      return match == null ? 999999 : int.tryParse(match.group(0)!) ?? 999999;
+    }
+
+    String prefixo(Carta carta) {
+      final bruto = _texto(carta.dados, 'number').toUpperCase().trim();
+      return bruto.replaceFirst(RegExp(r'^\D*\d+'), '').trim();
     }
 
     cartas.sort((a, b) {
-      final ka = chaveNumero(a);
-      final kb = chaveNumero(b);
-      final prefixo = ka.prefixo.compareTo(kb.prefixo);
-      if (prefixo != 0) return prefixo;
-      final numero = ka.numero.compareTo(kb.numero);
-      if (numero != 0) return numero;
-      final sufixo = ka.sufixo.compareTo(kb.sufixo);
-      if (sufixo != 0) return sufixo;
-      final nome = a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
-      if (nome != 0) return nome;
+      final porNumero = numero(a).compareTo(numero(b));
+      if (porNumero != 0) return porNumero;
+      final porComplemento = prefixo(a).compareTo(prefixo(b));
+      if (porComplemento != 0) return porComplemento;
+      final porNome = a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
+      if (porNome != 0) return porNome;
       return _texto(a.dados, 'slug').compareTo(_texto(b.dados, 'slug'));
     });
   }
