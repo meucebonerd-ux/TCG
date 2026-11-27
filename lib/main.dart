@@ -565,15 +565,10 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
           .where((item) => item.isNotEmpty).toList();
       if (tipos.isEmpty) return <String>[];
 
-      // Em alguns índices antigos, o ícone da expansão foi capturado antes
-      // do tipo impresso da carta (ex.: Dragon em EX Dragon e Fire em
-      // EX FireRed & LeafGreen). Quando o primeiro tipo também identifica
-      // a coleção, descartamos só esse primeiro ícone.
-      final colecao = _normalizarChave(_texto(carta.dados, 'collectionName'));
-      final primeiro = _normalizarChave(tipos.first);
-      if (tipos.length > 1 && primeiro.isNotEmpty &&
-          colecao.contains(primeiro)) {
-        return <String>[tipos[1]];
+      // Nestas quatro expansões o primeiro ícone é sempre o logo da coleção,
+      // não o tipo impresso da carta. O segundo ícone é o tipo do Pokémon.
+      if (const {'1153', '1130', '1121', '1118'}.contains(carta.collectionId)) {
+        return tipos.length > 1 ? <String>[tipos[1]] : <String>[];
       }
       return <String>[tipos.first];
     }
