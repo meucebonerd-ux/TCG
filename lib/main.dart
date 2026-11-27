@@ -364,15 +364,48 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       .trim();
 
   void _ordenarCartas(List<Carta> cartas) {
-    // Usa a numeração oficial como fonte principal. numberSort é apenas
-    // um fallback, pois índices antigos podem conter esse campo incorreto.
+    // A numeração oficial prevalece; numberSort antigo pode estar incorreto.
     String identificador(Carta carta) {
-      final numeroOficial = _texto(carta.dados, 'number').trim();
-      if (numeroOficial.isNotEmpty) return numeroOficial.toUpperCase();
-
+      final oficial = _texto(carta.dados, 'number').trim().toUpperCase();
+      if (oficial.isNotEmpty) return oficial;
       final slug = _texto(carta.dados, 'slug').trim().toUpperCase();
-      final doSlug = RegExp(r'-(\d{1,4})-(\d{1,4})
+      final doSlug = RegExp(r'-(\d{1,4})-(\d{1,4})').allMatches(slug).toList();
+      if (doSlug.isNotEmpty) {
+        final match = doSlug.last;
+        return match.group(1)! + '/' + match.group(2)!;
+      }
+      final numberSort = carta.dados?['numberSort'];
+      if (numberSort is num) return numberSort.toInt().toString();
+      return '';
+    }
 
+    String prefixo(String valor) {
+      final match = RegExp(r'^([^0-9]*)(?=\d)').firstMatch(valor);
+      return (match?.group(1) ?? '').trim();
+    }
+    int numero(String valor) {
+      final match = RegExp(r'\d+').firstMatch(valor);
+      return match == null ? 999999 : int.tryParse(match.group(0)!) ?? 999999;
+    }
+    String complemento(String valor) {
+      final match = RegExp(r'^[^0-9]*\d+(.*)').firstMatch(valor);
+      return (match?.group(1) ?? '').trim().toUpperCase();
+    }
+
+    cartas.sort((a, b) {
+      final idA = identificador(a);
+      final idB = identificador(b);
+      final porPrefixo = prefixo(idA).compareTo(prefixo(idB));
+      if (porPrefixo != 0) return porPrefixo;
+      final porNumero = numero(idA).compareTo(numero(idB));
+      if (porNumero != 0) return porNumero;
+      final porComplemento = complemento(idA).compareTo(complemento(idB));
+      if (porComplemento != 0) return porComplemento;
+      final porNome = a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
+      if (porNome != 0) return porNome;
+      return _texto(a.dados, 'slug').compareTo(_texto(b.dados, 'slug'));
+    });
+  }
   String _nomeExibicao(Colecao item) =>
       item.nome.replaceFirst(RegExp(r'^\\d+_'), '').replaceAll('_', ' ');
 
