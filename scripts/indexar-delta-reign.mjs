@@ -12,17 +12,18 @@ if (!COLLECTION_ID || !COLLECTION_NAME || !TCGCOLLECTOR_URL) {
 }
 const OUTPUT = 'assets/data/dados_cartas.json';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-let client = new GhostClient({ browser: 'Chrome_131', timeout: 90000 });
+let client = new GhostClient({ browser: 'Chrome_131', timeout: 60000 });
 
 async function resetClient() {
   try { await client.destroy(); } catch {}
-  client = new GhostClient({ browser: 'Chrome_131', timeout: 90000 });
+  client = new GhostClient({ browser: 'Chrome_131', timeout: 60000 });
 }
 
 async function getText(url) {
-  let attempt = 0;
-  while (true) {
-    attempt++;
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const startedAt = Date.now();
+    console.log(`[HTTP] Tentativa ${attempt}/${maxAttempts}: ${url}`);
     try {
       const response = await client.fetch(url, {
         headers: {
@@ -31,17 +32,24 @@ async function getText(url) {
         }
       });
       if (!response.ok) throw new Error(`HTTP ${response.status} em ${url}`);
-      return await response.text();
+      const html = await response.text();
+      console.log(`[HTTP] OK em ${Math.round((Date.now() - startedAt) / 1000)}s; ${html.length} caracteres recebidos.`);
+      return html;
     } catch (error) {
-      console.error(`Tentativa ${attempt} falhou em ${url}: ${error.message}`);
-      console.error('Reiniciando o cliente e tentando novamente em 5 segundos.');
+      console.error(`[HTTP] Falha ${attempt}/${maxAttempts} após ${Math.round((Date.now() - startedAt) / 1000)}s: ${error.message}`);
+      if (attempt === maxAttempts) {
+        throw new Error(`Não foi possível acessar ${url} após ${maxAttempts} tentativas. Último erro: ${error.message}`);
+      }
+      console.log('[HTTP] Reiniciando GhostFetch; nova tentativa em 5 segundos.');
       try { await resetClient(); } catch (resetError) {
-        console.error(`Falha ao reiniciar o cliente: ${resetError.message}`);
+        console.error(`[HTTP] Falha ao reiniciar GhostFetch: ${resetError.message}`);
       }
       await sleep(5000);
     }
   }
+  throw new Error(`Falha inesperada ao acessar ${url}`);
 }
+
 function numericId(value) {
   const match = String(value ?? '').match(/\d+/);
   return match ? String(Number(match[0])) : '';
@@ -91,6 +99,8 @@ function extractCardDetails(html, collector) {
 }
 
 async function main() {
+  console.log(`[INÍCIO] Indexando ${COLLECTION_NAME} (ID ${COLLECTION_ID}). Meta: ${EXPECTED_COUNT ?? 'não informada'} cartas.`);
+  console.log(`[INÍCIO] Página da coleção: ${TCGCOLLECTOR_URL}`);
   const html = await getText(TCGCOLLECTOR_URL);
   const collectorCards = extractCollectorCards(html);
   if (!collectorCards.size) throw new Error('Nenhuma carta numerada foi encontrada na página do TCG Collector.');
@@ -98,13 +108,16 @@ async function main() {
     throw new Error(`TCG Collector retornou ${collectorCards.size} cartas; esperado ${EXPECTED_COUNT}. Índice não será alterado.`);
   }
 
+  console.log(`[COLEÇÃO] ${collectorCards.size} cartas encontradas. Iniciando leitura individual.`);
   const details = [];
   const queue = [...collectorCards.entries()];
   const workers = Array.from({ length: 1 }, async () => {
     while (queue.length) {
       const [localId, collector] = queue.shift();
+      console.log(`[PROGRESSO] ${details.length + 1}/${collectorCards.size} — lendo carta ${localId}: ${collector.url}`);
       const cardHtml = await getText(collector.url);
       details.push({ localId, collector, ...extractCardDetails(cardHtml, { ...collector, localId }) });
+      console.log(`[PROGRESSO] ${details.length}/${collectorCards.size} concluídas: ${details.at(-1).name}`);
       await sleep(1200);
     }
   });
@@ -165,4 +178,6 @@ async function main() {
     output: OUTPUT,
   }, null, 2));
 }
-main().catch(error => { console.error(error); process.exit(1); });
+main().catch(error => { console.error('[ERRO FATAL]', error); process.exitCode = 1; }).finally(async () => {
+  try { await client.destroy(); } catch {}
+});
