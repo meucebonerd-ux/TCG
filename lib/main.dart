@@ -573,6 +573,9 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       final existePokemonComEsseNome = !ehBuscaTipo && !ehBuscaNumero &&
           todasCartas.any((carta) =>
               _categoriaDaCarta(carta) == 'Pokémon' && nomeCorresponde(carta));
+      final existeColecaoComEsseNome = colecoes.any(
+        (colecao) => _normalizarChave(colecao.nome).contains(termo),
+      );
 
       final resultados = todasCartas.where((carta) {
         final categoria = _categoriaDaCarta(carta);
@@ -590,6 +593,9 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
           return numero == termo ||
               numero.startsWith('$termo ') ||
               numero.startsWith('$termo/');
+        }
+        if (existeColecaoComEsseNome) {
+          return _normalizarChave(carta.collectionName).contains(termo);
         }
         if (existePokemonComEsseNome && categoria != 'Pokémon') return false;
         if (categoria == 'Pokémon') {
