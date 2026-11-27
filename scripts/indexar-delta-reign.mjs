@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import * as cheerio from 'cheerio';
+import { GhostClient } from 'ghostfetch';
 
 const COLLECTION_ID = String(process.env.COLLECTION_ID ?? '').trim();
 const COLLECTION_NAME = String(process.env.COLLECTION_NAME ?? '').trim();
@@ -11,22 +12,35 @@ if (!COLLECTION_ID || !COLLECTION_NAME || !TCGCOLLECTOR_URL) {
 }
 const OUTPUT = 'assets/data/dados_cartas.json';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+let client = new GhostClient({ browser: 'Chrome_131', timeout: 90000 });
+
+async function resetClient() {
+  try { await client.destroy(); } catch {}
+  client = new GhostClient({ browser: 'Chrome_131', timeout: 90000 });
+}
 
 async function getText(url) {
-  let lastError;
-  for (let attempt = 0; attempt < 7; attempt++) {
+  let attempt = 0;
+  while (true) {
+    attempt++;
     try {
-      const response = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36', accept: 'text/html' } });
-      if (response.status === 429 || response.status >= 500) throw new Error(`HTTP ${response.status} em ${url}`);
+      const response = await client.fetch(url, {
+        headers: {
+          'Referer': 'https://www.tcgcollector.com/',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+        }
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status} em ${url}`);
       return await response.text();
     } catch (error) {
-      lastError = error;
-      if (attempt === 6) break;
-      await sleep(Math.min(30000, 2500 * (2 ** attempt)));
+      console.error(`Tentativa ${attempt} falhou em ${url}: ${error.message}`);
+      console.error('Reiniciando o cliente e tentando novamente em 5 segundos.');
+      try { await resetClient(); } catch (resetError) {
+        console.error(`Falha ao reiniciar o cliente: ${resetError.message}`);
+      }
+      await sleep(5000);
     }
   }
-  throw lastError;
 }
 function numericId(value) {
   const match = String(value ?? '').match(/\d+/);
