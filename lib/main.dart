@@ -480,10 +480,12 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
 
   String _categoriaDaCarta(Carta carta) {
     final supertype = _texto(carta.dados, 'supertype');
-    if (supertype.isNotEmpty) return supertype;
     final trainer = _texto(carta.dados, 'trainerSubtype');
-    if (trainer.isNotEmpty) return 'Trainer • $trainer';
     final energy = _texto(carta.dados, 'energyCategory');
+    if (supertype.toLowerCase() == 'trainer' && trainer.isNotEmpty) return 'Trainer • $trainer';
+    if (supertype.toLowerCase() == 'energy' && energy.isNotEmpty) return 'Energy • $energy';
+    if (supertype.isNotEmpty) return supertype;
+    if (trainer.isNotEmpty) return 'Trainer • $trainer';
     if (energy.isNotEmpty) return 'Energy • $energy';
     return 'Não categorizada';
   }
