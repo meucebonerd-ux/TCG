@@ -703,13 +703,10 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         final nomeBruto = _texto(carta.dados, 'name');
         final nomePrincipal = nomeBruto.replaceAll(RegExp(r'\([^)]*\)'), ' ');
         final nomeDados = _normalizarChave(nomePrincipal);
-        // O slug identifica a carta pelo nome próprio e ajuda a recuperar
-        // registros cujo campo "name" foi contaminado no índice antigo.
-        final slug = _normalizarChave(_texto(carta.dados, 'slug'));
-        final nomeArquivo = _normalizarChave(carta.nome);
-        return nomeDados.contains(termo) ||
-            slug.contains(termo) ||
-            nomeArquivo.replaceAll(RegExp(r'\([^)]*\)'), ' ').contains(termo);
+        // A busca por nome usa exclusivamente o nome canônico da carta.
+        // Slugs, nomes de arquivos e descrições podem conter referências a
+        // outros Pokémon/decks e não devem criar resultados intrusos.
+        return nomeDados.contains(termo);
       }
 
       // Primeiro verifica se o termo corresponde ao nome/slug de alguma carta.
