@@ -747,6 +747,12 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
 
   Future<void> _abrirBuscaGlobal() async {
     if (!mounted) return;
+    if (colecoes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('As coleções ainda não foram carregadas. Aguarde e tente novamente.')),
+      );
+      return;
+    }
     final carregamento = showDialog<void>(
       context: context, barrierDismissible: false,
       builder: (dialogContext) => const PopScope(
@@ -769,6 +775,9 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     final imagensPorChave = <String, File>{};
     final imagensPorSlug = <String, File>{};
     for (final colecao in colecoes) {
+      // Cede um frame entre coleções para manter o indicador e os toques responsivos.
+      await Future<void>.delayed(Duration.zero);
+      if (!mounted) return;
       final id = colecao.nome.split('_').first;
       await for (final item in colecao.pasta.list(recursive: true, followLinks: false)) {
         if (item is! File) continue;
@@ -1188,7 +1197,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       appBar: AppBar(
         title: Text(selecionada == null ? 'Cartas' : selecionada.nome),
         actions: [
-          IconButton(tooltip: 'Pesquisa global', onPressed: colecoes.isEmpty ? null : _abrirBuscaGlobal, icon: const Icon(Icons.manage_search)),
+          IconButton(tooltip: 'Pesquisa global', onPressed: _abrirBuscaGlobal, icon: const Icon(Icons.manage_search)),
           if (selecionada != null)
             IconButton(tooltip: 'Filtrar cartas', onPressed: _abrirFiltrosColecao, icon: const Icon(Icons.filter_list)),
           ValueListenableBuilder<bool>(
