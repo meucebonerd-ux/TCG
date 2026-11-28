@@ -212,6 +212,14 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       }
       if (!mounted) return;
       setState(() { colecoes = resultado; colecaoSelecionada = null; _cartasPorColecao.clear(); _cartasBuscaGlobalCache = null; _indiceCartasCache = null; carregando = false; });
+      _preparacaoBuscaGlobal = null;
+      unawaited(Future<void>.delayed(const Duration(milliseconds: 100), () {
+        if (!mounted) return Future<void>.value();
+        return _prepararCacheBuscaGlobal().catchError((Object erro) {
+          _preparacaoBuscaGlobal = null;
+          debugPrint('Pré-carregamento da busca global falhou: $erro');
+        });
+      }));
     } catch (e) { if (mounted) setState(() { erroMsg = 'Erro ao carregar coleções: $e'; carregando = false; }); }
   }
 
@@ -745,26 +753,9 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     );
   }
 
-  Future<void> _abrirBuscaGlobal() async {
-    if (!mounted) return;
-    if (colecoes.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('As coleções ainda não foram carregadas. Aguarde e tente novamente.')),
-      );
-      return;
-    }
-    final carregamento = showDialog<void>(
-      context: context, barrierDismissible: false,
-      builder: (dialogContext) => const PopScope(
-        canPop: false,
-        child: AlertDialog(content: Row(children: [
-          SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 3)),
-          SizedBox(width: 16), Expanded(child: Text('Preparando a busca global...')),
-        ])),
-      ),
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 16));
-    try {
+  Future<void>? _preparacaoBuscaGlobal;
+
+  Future<void> _montarCacheBuscaGlobal() async {
     final indiceCompleto = await _carregarIndiceCartas();
     if (_cartasBuscaGlobalCache == null) {
     final colecoesPorId = <String, Colecao>{
@@ -852,6 +843,34 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     }
     _cartasBuscaGlobalCache = cartasPreparadas;
     }
+  }
+
+  Future<void> _prepararCacheBuscaGlobal() {
+    if (_cartasBuscaGlobalCache != null) return Future<void>.value();
+    return _preparacaoBuscaGlobal ??= _montarCacheBuscaGlobal();
+  }
+
+  Future<void> _abrirBuscaGlobal() async {
+    if (!mounted) return;
+    if (colecoes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('As coleções ainda não foram carregadas. Aguarde e tente novamente.')),
+      );
+      return;
+    }
+    final carregamento = showDialog<void>(
+      context: context, barrierDismissible: false,
+      builder: (dialogContext) => const PopScope(
+        canPop: false,
+        child: AlertDialog(content: Row(children: [
+          SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 3)),
+          SizedBox(width: 16), Expanded(child: Text('Preparando a busca global...')),
+        ])),
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 16));
+    try {
+    await _prepararCacheBuscaGlobal();
     if (!mounted) return;
     } catch (e) {
       if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
