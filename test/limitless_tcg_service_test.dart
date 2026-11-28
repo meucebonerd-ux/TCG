@@ -57,6 +57,36 @@ void main() {
       expect(standings.single.deck, 'Slowking');
     });
 
+    test('extracts cards from the current grouped Limitless decklist layout', () {
+      const html = '''
+        <html><body>
+          <section>
+            <h2>Pokémon (17)</h2>
+            <div class="decklist-card">
+              <a href="/cards/sv9/105">4 N's Zorua</a>
+            </div>
+            <div class="decklist-card">
+              <a href="/cards/sv9/104">2 Munkidori</a>
+            </div>
+          </section>
+          <section>
+            <h2>Trainer (35)</h2>
+            <div><a href="/cards/sv8/180">3 Boss's Orders</a></div>
+          </section>
+        </body></html>
+      ''';
+
+      final cards = LimitlessTcgService.parseDecklist(html);
+
+      expect(cards, hasLength(3));
+      expect(cards[0].quantity, 4);
+      expect(cards[0].name, "N's Zorua");
+      expect(cards[0].number, '105');
+      expect(cards[0].collectionId, 'sv9');
+      expect(cards[2].quantity, 3);
+      expect(cards[2].name, "Boss's Orders");
+    });
+
     test('extracts card quantities and identifiers from a public decklist', () {
       const html = '''
         <html><body><table>
