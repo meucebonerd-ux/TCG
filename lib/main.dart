@@ -913,12 +913,12 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         if (!mounted) return;
       }
     }
-    final ordemColecao = <String, int>{};
-    for (var i = 0; i < colecoes.length; i++) {
-      ordemColecao[_normalizarChave(
-        colecoes[i].nome.replaceFirst(RegExp(r'^\\d+_'), '').replaceAll('_', ' '),
-      )] = i;
-    }
+    // A lista de coleções já segue a ordem oficial do catálogo: mais novas primeiro.
+    // Usamos o ID da coleção, não o nome, pois nomes do índice podem variar.
+    final ordemColecao = <String, int>{
+      for (var i = 0; i < colecoes.length; i++)
+        colecoes[i].nome.split('_').first: i,
+    };
 
     List<Carta> buscar(String texto) {
       final termo = _normalizarChave(texto);
@@ -984,13 +984,11 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       }
 
       resultados.sort((a, b) {
-        final nomeA = _normalizarChave(a.collectionName);
-        final nomeB = _normalizarChave(b.collectionName);
-        final indiceA = ordemColecao[nomeA] ?? 999999;
-        final indiceB = ordemColecao[nomeB] ?? 999999;
+        final indiceA = ordemColecao[a.collectionId] ?? 999999;
+        final indiceB = ordemColecao[b.collectionId] ?? 999999;
         final lancamento = ordemBusca == 'recentes'
-            ? indiceB.compareTo(indiceA)
-            : indiceA.compareTo(indiceB);
+            ? indiceA.compareTo(indiceB)
+            : indiceB.compareTo(indiceA);
         if (lancamento != 0) return lancamento;
         final numero = (numerosPesquisa[a] ?? 999999)
             .compareTo(numerosPesquisa[b] ?? 999999);
@@ -1464,13 +1462,11 @@ class _BuscaGlobalResultadosScreenState
 
   void _ordenarCartas() {
     cartasOrdenadas.sort((a, b) {
-      final nomeA = a.collectionName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
-      final nomeB = b.collectionName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
-      final indiceA = widget.ordemColecao[nomeA] ?? 999999;
-      final indiceB = widget.ordemColecao[nomeB] ?? 999999;
+      final indiceA = widget.ordemColecao[a.collectionId] ?? 999999;
+      final indiceB = widget.ordemColecao[b.collectionId] ?? 999999;
       final lancamento = ordem == 'recentes'
-          ? indiceB.compareTo(indiceA)
-          : indiceA.compareTo(indiceB);
+          ? indiceA.compareTo(indiceB)
+          : indiceB.compareTo(indiceA);
       if (lancamento != 0) return lancamento;
       final numeroA = int.tryParse(
         RegExp(r'^\\d+').firstMatch((a.dados?['number']?.toString() ?? ''))?.group(0) ?? '',
