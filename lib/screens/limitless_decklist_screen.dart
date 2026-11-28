@@ -86,6 +86,95 @@ class _LimitlessDecklistScreenState extends State<LimitlessDecklistScreen> {
           final numberMatches = card.number.isEmpty ||
               _key(item['number']?.toString() ?? '') == _key(card.number);
           final setMatches = card.collectionId.isEmpty ||
+              !RegExp(r'^\\d+
+          return nameMatches && numberMatches && setMatches;
+        }).toList();
+
+        File? image;
+        for (final item in candidates) {
+          final id = item['collectionId']?.toString() ?? '';
+          final folder = directories[id];
+          if (folder == null) continue;
+          final fileName = (item['file'] ?? '').toString().split('/').last;
+          if (fileName.isEmpty) continue;
+          final direct = File('${folder.path}/$fileName');
+          if (await direct.exists()) {
+            image = direct;
+            break;
+          }
+          await for (final entity in folder.list(recursive: true, followLinks: false)) {
+            if (entity is File && entity.uri.pathSegments.last == fileName) {
+              image = entity;
+              break;
+            }
+          }
+          if (image != null) break;
+        }
+        resolved['${card.name}|${card.number}'] = image;
+      }
+      if (mounted) setState(() => _images.addAll(resolved));
+    } catch (_) {
+      // A decklist remains usable as text when the local image index is absent.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis)),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error.isNotEmpty
+              ? Center(child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text('Não foi possível carregar a decklist.\n$_error', textAlign: TextAlign.center),
+                ))
+              : _cards.isEmpty
+                  ? const Center(child: Text('A decklist não está disponível publicamente.'))
+                  : Column(children: [
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(children: [
+                          Expanded(child: Text('${_cards.length} cartas diferentes', style: Theme.of(context).textTheme.titleMedium)),
+                          Text('$_total cartas'),
+                        ]),
+                      ),
+                      Expanded(child: ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                        itemCount: _cards.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final card = _cards[index];
+                          final image = _images['${card.name}|${card.number}'];
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            leading: SizedBox(
+                              width: 54,
+                              child: image != null
+                                  ? GestureDetector(
+                                      onTap: () => showDialog<void>(
+                                        context: context,
+                                        builder: (_) => Dialog(
+                                          child: InteractiveViewer(
+                                            child: Image.file(image, fit: BoxFit.contain),
+                                          ),
+                                        ),
+                                      ),
+                                      child: Image.file(image, fit: BoxFit.contain),
+                                    )
+                                  : const Center(child: Icon(Icons.image_not_supported_outlined)),
+                            ),
+                            title: Text(card.name),
+                            subtitle: Text(card.number.isEmpty ? 'Imagem local não encontrada' : card.number),
+                            trailing: Text('×${card.quantity}', style: Theme.of(context).textTheme.titleMedium),
+                          );
+                        },
+                      )),
+                    ]),
+    );
+  }
+}
+).hasMatch(card.collectionId) ||
               item['collectionId']?.toString() == card.collectionId;
           return nameMatches && numberMatches && setMatches;
         }).toList();
