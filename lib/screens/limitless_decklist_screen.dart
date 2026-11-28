@@ -66,88 +66,116 @@ class _LimitlessDecklistScreenState extends State<LimitlessDecklistScreen> {
       .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
       .trim();
 
+  String _fileKey(String value) {
+    var name = value.replaceAll('\\', '/').split('/').last;
+    final dot = name.lastIndexOf('.');
+    if (dot > 0) name = name.substring(0, dot);
+    final hash = name.indexOf('__');
+    if (hash >= 0) name = name.substring(0, hash);
+    return _normalize(name);
+  }
+
   Future<void> _resolveLocalImages(List<LimitlessDeckCard> cards) async {
     try {
-      var raw = await rootBundle.loadString('assets/data/dados_cartas.json');
+      final sources = <String>[];
       final externalIndex = File('/sdcard/meuapp/dados_cartas.json');
       if (await externalIndex.exists()) {
-        raw = await externalIndex.readAsString();
+        sources.add(await externalIndex.readAsString());
       }
+      sources.add(await rootBundle.loadString('assets/data/dados_cartas.json'));
 
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map || decoded['cards'] is! List) return;
+      final indexByKey = <String, Map<String, dynamic>>{};
+      for (final raw in sources) {
+        try {
+          final decoded = jsonDecode(raw);
+          if (decoded is! Map || decoded['cards'] is! List) continue;
+          for (final value in decoded['cards']) {
+            if (value is! Map) continue;
+            final item = Map<String, dynamic>.from(value);
+            final id = item['collectionId']?.toString() ?? '';
+            final slug = item['slug']?.toString() ?? '';
+            final file = item['file']?.toString() ?? '';
+            final key = '\$id|\${_fileKey(slug.isNotEmpty ? slug : file)}';
+            if (id.isNotEmpty && key != '\$id|') {
+              indexByKey.putIfAbsent(key, () => item);
+            }
+          }
+        } catch (_) {}
+      }
+      final index = indexByKey.values.toList(growable: false);
+      if (index.isEmpty) return;
 
-      final index = (decoded['cards'] as List)
-          .whereType<Map>()
-          .map((item) => Map<String, dynamic>.from(item))
-          .toList();
+      final appRoot = Directory('/sdcard/meuapp');
+      if (!await appRoot.exists()) return;
+      Directory? base;
+      await for (final entity in appRoot.list(followLinks: false)) {
+        if (entity is! Directory) continue;
+        final parts = entity.uri.pathSegments.where((part) => part.isNotEmpty);
+        if (parts.isEmpty) continue;
+        final folder = parts.last.toLowerCase();
+        final normalized = folder
+            .replaceAll('á', 'a').replaceAll('à', 'a')
+            .replaceAll('ã', 'a').replaceAll('â', 'a')
+            .replaceAll('é', 'e').replaceAll('ê', 'e')
+            .replaceAll('í', 'i').replaceAll('ó', 'o')
+            .replaceAll('ô', 'o').replaceAll('õ', 'o')
+            .replaceAll('ú', 'u').replaceAll('ç', 'c');
+        if (normalized == 'tcg fisico') {
+          base = entity;
+          break;
+        }
+      }
+      if (base == null) return;
 
-      final base = Directory('/sdcard/meuapp/TCG Fisico');
-      if (!await base.exists()) return;
-
-      final directories = <String, Directory>{};
-      await for (final entity in base.list(followLinks: false)) {
-        if (entity is Directory) {
-          final parts =
-              entity.uri.pathSegments.where((part) => part.isNotEmpty);
-          if (parts.isEmpty) continue;
-          final folderName = parts.last;
-          directories[folderName.split('_').first] = entity;
+      final imageFiles = <String, File>{};
+      await for (final collection in base.list(followLinks: false)) {
+        if (collection is! Directory) continue;
+        final parts = collection.uri.pathSegments.where((part) => part.isNotEmpty);
+        if (parts.isEmpty) continue;
+        final collectionId = parts.last.split('_').first;
+        await for (final entity in collection.list(recursive: true, followLinks: false)) {
+          if (entity is! File) continue;
+          final path = entity.path.toLowerCase();
+          if (!const ['.jpg', '.jpeg', '.png', '.webp', '.gif']
+              .any(path.endsWith)) continue;
+          final key = _fileKey(entity.uri.pathSegments.last);
+          if (key.isNotEmpty) {
+            imageFiles.putIfAbsent('\$collectionId|\$key', () => entity);
+          }
         }
       }
 
       final resolved = <String, File?>{};
       for (final deckCard in cards) {
+        final wantedName = _normalize(deckCard.name);
+        final wantedNumber = _normalize(deckCard.number.split('/').first);
         final candidates = index.where((item) {
-          final nameMatches = _normalize(
-                item['name']?.toString() ?? '',
-              ) ==
-              _normalize(deckCard.name);
-          final indexedNumber =
-              (item['number']?.toString() ?? '').split('/').first;
-          final numberMatches = deckCard.number.isEmpty ||
-              _normalize(indexedNumber) == _normalize(deckCard.number);
-          final indexedSet = item['collectionId']?.toString() ?? '';
-          final setMatches = deckCard.collectionId.isEmpty ||
-              !RegExp(r'^\d+$').hasMatch(deckCard.collectionId) ||
-              indexedSet == deckCard.collectionId;
-          return nameMatches && numberMatches && setMatches;
+          final nameMatches =
+              _normalize(item['name']?.toString() ?? '') == wantedName;
+          final indexedNumber = _normalize(
+            (item['number']?.toString() ?? '').split('/').first,
+          );
+          final numberMatches =
+              wantedNumber.isEmpty || indexedNumber == wantedNumber;
+          return nameMatches && numberMatches;
         }).toList();
 
         File? foundImage;
         for (final item in candidates) {
           final collectionId = item['collectionId']?.toString() ?? '';
-          final folder = directories[collectionId];
-          if (folder == null) continue;
-
-          final fileName =
-              (item['file']?.toString() ?? '').split('/').last;
-          if (fileName.isEmpty) continue;
-
-          final direct = File('${folder.path}/$fileName');
-          if (await direct.exists()) {
-            foundImage = direct;
-            break;
-          }
-
-          await for (final entity
-              in folder.list(recursive: true, followLinks: false)) {
-            if (entity is File && entity.uri.pathSegments.last == fileName) {
-              foundImage = entity;
-              break;
-            }
-          }
+          final slug = item['slug']?.toString() ?? '';
+          final file = item['file']?.toString() ?? '';
+          final key = _fileKey(slug.isNotEmpty ? slug : file);
+          foundImage = imageFiles['\$collectionId|\$key'];
           if (foundImage != null) break;
         }
-        resolved['${deckCard.name}|${deckCard.number}'] = foundImage;
+        resolved['\${deckCard.name}|\${deckCard.number}'] = foundImage;
       }
 
       if (!mounted) return;
-      setState(() {
-        _images.addAll(resolved);
-      });
-    } catch (_) {
-      // A decklist remains usable as text if the local image index is absent.
+      setState(() => _images.addAll(resolved));
+    } catch (error) {
+      debugPrint('Falha ao localizar imagens locais da decklist: \$error');
     }
   }
 
