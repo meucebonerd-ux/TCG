@@ -62,7 +62,11 @@ class _LimitlessDecklistScreenState extends State<LimitlessDecklistScreen> {
 
   Future<void> _resolveLocalImages(List<LimitlessDeckCard> cards) async {
     try {
-      final raw = await rootBundle.loadString('assets/data/dados_cartas.json');
+      String raw = await rootBundle.loadString('assets/data/dados_cartas.json');
+      final externalIndex = File('/sdcard/meuapp/dados_cartas.json');
+      if (await externalIndex.exists()) {
+        raw = await externalIndex.readAsString();
+      }
       final decoded = jsonDecode(raw);
       if (decoded is! Map || decoded['cards'] is! List) return;
       final index = decoded['cards'].whereType<Map>()
@@ -83,8 +87,9 @@ class _LimitlessDecklistScreenState extends State<LimitlessDecklistScreen> {
       for (final card in cards) {
         final candidates = index.where((item) {
           final nameMatches = _key(item['name']?.toString() ?? '') == _key(card.name);
+          final indexedNumber = (item['number']?.toString() ?? '').split('/').first;
           final numberMatches = card.number.isEmpty ||
-              _key(item['number']?.toString() ?? '') == _key(card.number);
+              _key(indexedNumber) == _key(card.number);
           final setMatches = card.collectionId.isEmpty ||
               !RegExp(r'^\\d+
           return nameMatches && numberMatches && setMatches;
