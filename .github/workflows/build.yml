@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Preparar Node.js
         uses: actions/setup-node@v4
@@ -30,6 +32,25 @@ jobs:
 
       - name: Validar sintaxe do indexador
         run: node --check scripts/indexar-delta-reign.mjs
+      - name: Validar sintaxe do reindexador das coleções EX
+        run: node --check scripts/reindexar-colecoes-legadas.mjs
+
+      - name: Reindexar EX Dragon, FireRed & LeafGreen, Dragon Frontiers e Dragons Exalted
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Enviar índice completo para reindexação')
+        env:
+          INDEX_INPUT: assets/data/dados_cartas.json
+          INDEX_OUTPUT: assets/data/dados_cartas.json
+          REPORT_PATH: relatorio_reindexacao_4_colecoes.json
+        run: node scripts/reindexar-colecoes-legadas.mjs
+
+      - name: Salvar índice completo reindexado
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Enviar índice completo para reindexação')
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/data/dados_cartas.json relatorio_reindexacao_4_colecoes.json
+          git commit -m "Reindexa quatro coleções EX com comparação TCG Collector e TCGdex"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
 
       - name: Atualizar branch antes de reconstruir o índice
         if: github.event_name == 'push' && contains(github.event.head_commit.message, 'Reindexa Delta Reign')
