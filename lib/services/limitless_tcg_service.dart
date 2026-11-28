@@ -57,6 +57,7 @@ class LimitlessStanding {
   final String country;
   final String deck;
   final String decklistUrl;
+  final String deckImageUrl;
 
   const LimitlessStanding({
     required this.placing,
@@ -64,6 +65,7 @@ class LimitlessStanding {
     required this.country,
     required this.deck,
     required this.decklistUrl,
+    this.deckImageUrl = '',
   });
 
   Map<String, dynamic> toJson() => {
@@ -72,6 +74,7 @@ class LimitlessStanding {
         'country': country,
         'deck': deck,
         'decklistUrl': decklistUrl,
+        'deckImageUrl': deckImageUrl,
       };
 
   factory LimitlessStanding.fromJson(Map<String, dynamic> json) =>
@@ -81,6 +84,7 @@ class LimitlessStanding {
         country: json['country']?.toString() ?? '',
         deck: json['deck']?.toString() ?? '',
         decklistUrl: json['decklistUrl']?.toString() ?? '',
+        deckImageUrl: json['deckImageUrl']?.toString() ?? '',
       );
 }
 
@@ -355,6 +359,15 @@ class LimitlessTcgService {
       final deckAnchor = row.querySelector('a[href*="/decks/"]');
       final decklistAnchor = row.querySelector('a[href*="/decks/list/"]');
       final country = row.querySelector('img[alt]')?.attributes['alt'] ?? '';
+      dom.Element? deckImage;
+      dom.Element? deckNode = deckAnchor;
+      for (var depth = 0; deckNode != null && depth < 5; depth++) {
+        deckImage ??= deckNode.querySelector('img[data-src], img[src]');
+        if (deckImage != null) break;
+        deckNode = deckNode.parent;
+      }
+      final rawDeckImage = deckImage?.attributes['data-src'] ?? deckImage?.attributes['src'] ?? '';
+      final deckImageUrl = rawDeckImage.isEmpty ? '' : Uri.parse(_baseUrl).resolve(rawDeckImage).toString();
 
       results.add(LimitlessStanding(
         placing: placing,
@@ -366,6 +379,7 @@ class LimitlessTcgService {
             : Uri.parse(_baseUrl).resolve(
                 decklistAnchor.attributes['href'] ?? '',
               ).toString(),
+        deckImageUrl: deckImageUrl,
       ));
     }
     return results;
