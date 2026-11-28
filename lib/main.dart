@@ -862,7 +862,15 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       return;
     }
     final todasCartas = _cartasBuscaGlobalCache!;
-    final categoriasBusca = todasCartas.map(_categoriaDaCarta).toSet().toList()..sort();
+    final categoriasSet = <String>{};
+    for (var i = 0; i < todasCartas.length; i++) {
+      categoriasSet.add(_categoriaDaCarta(todasCartas[i]));
+      if (i > 0 && i % 500 == 0) {
+        await Future<void>.delayed(Duration.zero);
+        if (!mounted) return;
+      }
+    }
+    final categoriasBusca = categoriasSet.toList()..sort();
     final controller = TextEditingController();
     Timer? debounceBusca;
     var categoriaSelecionada = 'Todos';
