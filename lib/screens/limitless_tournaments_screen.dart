@@ -421,7 +421,28 @@ class _LimitlessTournamentDetailScreenState
                                     style: const TextStyle(fontSize: 12),
                                   ),
                                 ),
-                                title: Text(standing.player),
+                                title: Row(
+                                  children: [
+                                    if (standing.deckImageUrl.isNotEmpty) ...[
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: Image.network(
+                                          standing.deckImageUrl,
+                                          width: 34,
+                                          height: 46,
+                                          fit: BoxFit.contain,
+                                          errorBuilder: (_, __, ___) => const SizedBox(
+                                            width: 34,
+                                            height: 46,
+                                            child: Icon(Icons.style_outlined, size: 20),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                    ],
+                                    Expanded(child: Text(standing.player)),
+                                  ],
+                                ),
                                 subtitle: Text([
                                   if (standing.country.isNotEmpty)
                                     standing.country,
