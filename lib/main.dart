@@ -763,7 +763,10 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         ])),
       ),
     );
-    await Future<void>.delayed(const Duration(milliseconds: 16));
+    // Aguarda o Flutter efetivamente desenhar o diálogo antes de iniciar
+    // leitura do índice e varredura das imagens, que podem consumir bastante CPU.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
     try {
     final indiceCompleto = await _carregarIndiceCartas();
     if (_cartasBuscaGlobalCache == null) {
@@ -1197,7 +1200,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       appBar: AppBar(
         title: Text(selecionada == null ? 'Cartas' : selecionada.nome),
         actions: [
-          IconButton(tooltip: 'Pesquisa global', onPressed: _abrirBuscaGlobal, icon: const Icon(Icons.manage_search)),
+          IconButton(tooltip: 'Pesquisa global', onPressed: () { if (carregando || carregandoColecao) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Aguarde o carregamento das coleções terminar.'))); return; } _abrirBuscaGlobal(); }, icon: const Icon(Icons.manage_search)),
           if (selecionada != null)
             IconButton(tooltip: 'Filtrar cartas', onPressed: _abrirFiltrosColecao, icon: const Icon(Icons.filter_list)),
           ValueListenableBuilder<bool>(
