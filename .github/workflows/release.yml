@@ -49,7 +49,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.19.0"
-          channel: stable
+          channel: "stable"
 
       - name: Instalar dependências
         run: flutter pub get
@@ -58,7 +58,7 @@ jobs:
         run: flutter build apk --release
 
       - name: Publicar GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ inputs.version }}
           name: TCG Collector v${{ inputs.version }}
