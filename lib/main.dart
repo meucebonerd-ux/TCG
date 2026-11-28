@@ -994,6 +994,8 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
           builder: (_) => BuscaGlobalResultadosScreen(
             termo: termo,
             cartas: resultados,
+            ordemColecao: ordemColecao,
+            ordemInicial: ordemBusca,
           ),
         ),
       );
@@ -1070,26 +1072,6 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
                       categoriaSelecionada = v ?? 'Todos';
                       resultadosAtuais = buscar(controller.text);
                     }),
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    value: ordemBusca,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Ordem de lançamento',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'recentes', child: Text('Mais recentes primeiro')),
-                      DropdownMenuItem(value: 'antigos', child: Text('Mais antigos primeiro')),
-                    ],
-                    onChanged: (v) async {
-                      final novaOrdem = v ?? 'recentes';
-                      ordemBusca = novaOrdem;
-                      final prefs = await SharedPreferences.getInstance();
-                      await prefs.setString('ordem_busca_global', novaOrdem);
-                      atualizar(() { resultadosAtuais = buscar(controller.text); });
-                    },
                   ),
                   const SizedBox(height: 8),
                   Align(
@@ -1429,15 +1411,68 @@ class CartasScreen extends StatelessWidget {
   }
 }
 
-class BuscaGlobalResultadosScreen extends StatelessWidget {
+class BuscaGlobalResultadosScreen extends StatefulWidget {
   final String termo;
   final List<Carta> cartas;
+  final Map<String, int> ordemColecao;
+  final String ordemInicial;
 
   const BuscaGlobalResultadosScreen({
     super.key,
     required this.termo,
     required this.cartas,
+    required this.ordemColecao,
+    required this.ordemInicial,
   });
+
+  @override
+  State<BuscaGlobalResultadosScreen> createState() =>
+      _BuscaGlobalResultadosScreenState();
+}
+
+class _BuscaGlobalResultadosScreenState
+    extends State<BuscaGlobalResultadosScreen> {
+  late String ordem;
+  late List<Carta> cartasOrdenadas;
+
+  @override
+  void initState() {
+    super.initState();
+    ordem = widget.ordemInicial;
+    cartasOrdenadas = List<Carta>.of(widget.cartas);
+    _ordenarCartas();
+  }
+
+  void _ordenarCartas() {
+    cartasOrdenadas.sort((a, b) {
+      final nomeA = _normalizarChave(a.collectionName);
+      final nomeB = _normalizarChave(b.collectionName);
+      final indiceA = widget.ordemColecao[nomeA] ?? 999999;
+      final indiceB = widget.ordemColecao[nomeB] ?? 999999;
+      final lancamento = ordem == 'recentes'
+          ? indiceB.compareTo(indiceA)
+          : indiceA.compareTo(indiceB);
+      if (lancamento != 0) return lancamento;
+      final numeroA = int.tryParse(
+        RegExp(r'^\\d+').firstMatch(_texto(a.dados, 'number'))?.group(0) ?? '',
+      ) ?? 999999;
+      final numeroB = int.tryParse(
+        RegExp(r'^\\d+').firstMatch(_texto(b.dados, 'number'))?.group(0) ?? '',
+      ) ?? 999999;
+      if (numeroA != numeroB) return numeroA.compareTo(numeroB);
+      return a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
+    });
+  }
+
+  Future<void> _alterarOrdem(String? novaOrdem) async {
+    if (novaOrdem == null) return;
+    setState(() {
+      ordem = novaOrdem;
+      _ordenarCartas();
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('ordem_busca_global', novaOrdem);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1453,14 +1488,37 @@ class BuscaGlobalResultadosScreen extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    '"$termo"',
+                    '"${widget.termo}"',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                Text('${cartas.length} cartas'),
+                Text('${cartasOrdenadas.length} cartas'),
               ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+            child: DropdownButtonFormField<String>(
+              value: ordem,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Ordem de exibição',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: 'recentes',
+                  child: Text('Mais recentes primeiro'),
+                ),
+                DropdownMenuItem(
+                  value: 'antigos',
+                  child: Text('Mais antigos primeiro'),
+                ),
+              ],
+              onChanged: _alterarOrdem,
             ),
           ),
           Expanded(
@@ -1472,9 +1530,9 @@ class BuscaGlobalResultadosScreen extends StatelessWidget {
                 crossAxisSpacing: 8,
                 mainAxisSpacing: 8,
               ),
-              itemCount: cartas.length,
+              itemCount: cartasOrdenadas.length,
               itemBuilder: (context, index) {
-                final carta = cartas[index];
+                final carta = cartasOrdenadas[index];
                 return InkWell(
                   onTap: () => Navigator.push(
                     context,
