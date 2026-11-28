@@ -226,7 +226,10 @@ class LimitlessTcgService {
 
       // Legacy public decklists keep the quantity in the first table cell.
       if (quantity == 0) {
-        final row = link.closest('tr');
+        dom.Element? row = link.parent;
+        while (row != null && row.localName != 'tr') {
+          row = row.parent;
+        }
         if (row != null) {
           final cells = row.querySelectorAll('td');
           if (cells.isNotEmpty) {
