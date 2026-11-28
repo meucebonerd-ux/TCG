@@ -84,6 +84,24 @@ class LimitlessStanding {
       );
 }
 
+
+@immutable
+class LimitlessDeckCard {
+  final int quantity;
+  final String name;
+  final String number;
+  final String collectionId;
+  final String collectionName;
+
+  const LimitlessDeckCard({
+    required this.quantity,
+    required this.name,
+    required this.number,
+    required this.collectionId,
+    required this.collectionName,
+  });
+}
+
 /// Reads the public, server-rendered pages of the main Limitless TCG database.
 /// It intentionally does not call play.limitlesstcg.com or its tournament API.
 class LimitlessTcgService {
@@ -170,6 +188,49 @@ class LimitlessTcgService {
       );
     }
     return standings;
+  }
+
+
+  Future<List<LimitlessDeckCard>> fetchDecklist(String decklistUrl) async {
+    final uri = Uri.tryParse(decklistUrl);
+    if (uri == null ||
+        uri.host != 'limitlesstcg.com' ||
+        !uri.path.startsWith('/decks/list/')) {
+      throw ArgumentError.value(decklistUrl, 'decklistUrl');
+    }
+    final html = await _getPage(uri);
+    return parseDecklist(html);
+  }
+
+  @visibleForTesting
+  static List<LimitlessDeckCard> parseDecklist(String source) {
+    final document = html_parser.parse(source);
+    final cards = <LimitlessDeckCard>[];
+    final seen = <String>{};
+    for (final row in document.querySelectorAll('table tr')) {
+      final link = row.querySelector('a[href*="/cards/"]');
+      if (link == null) continue;
+      final cells = row.querySelectorAll('td');
+      if (cells.isEmpty) continue;
+      final quantity = int.tryParse(cells.first.text.trim());
+      if (quantity == null || quantity < 1 || quantity > 4) continue;
+      final href = link.attributes['href'] ?? '';
+      final path = Uri.tryParse(href)?.pathSegments ?? const <String>[];
+      final number = path.length >= 3 ? path[path.length - 1] : '';
+      final collectionId = path.length >= 2 ? path[path.length - 2] : '';
+      final name = link.text.trim();
+      if (name.isEmpty) continue;
+      final key = '$quantity|$name|$number|$collectionId';
+      if (!seen.add(key)) continue;
+      cards.add(LimitlessDeckCard(
+        quantity: quantity,
+        name: name,
+        number: number,
+        collectionId: collectionId,
+        collectionName: '',
+      ));
+    }
+    return cards;
   }
 
   @visibleForTesting
