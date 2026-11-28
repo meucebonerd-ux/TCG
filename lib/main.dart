@@ -853,8 +853,6 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     _cartasBuscaGlobalCache = cartasPreparadas;
     }
     if (!mounted) return;
-    if (mounted) Navigator.of(context, rootNavigator: true).pop();
-    await carregamento;
     } catch (e) {
       if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
         Navigator.of(context, rootNavigator: true).pop();
@@ -873,22 +871,27 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     ordemBusca = preferenciasBusca.getString('ordem_busca_global') ?? 'recentes';
     var resultadosAtuais = <Carta>[];
 
-    final nomesPesquisa = <Carta, String>{
-      for (final carta in todasCartas)
-        carta: _normalizarChave(
-          _texto(carta.dados, 'name').replaceAll(RegExp(r'\([^)]*\\)'), ' '),
-        ),
-    };
-    final ordemColecao = <String, int>{
-      for (var i = 0; i < colecoes.length; i++)
-        _normalizarChave(colecoes[i].nome.replaceFirst(RegExp(r'^\\d+_'), '').replaceAll('_', ' ')): i,
-    };
-    final numerosPesquisa = <Carta, int>{
-      for (final carta in todasCartas)
-        carta: int.tryParse(
-          RegExp(r'^\\d+').firstMatch(_texto(carta.dados, 'number'))?.group(0) ?? '',
-        ) ?? 999999,
-    };
+    final nomesPesquisa = <Carta, String>{};
+    final numerosPesquisa = <Carta, int>{};
+    for (var i = 0; i < todasCartas.length; i++) {
+      final carta = todasCartas[i];
+      nomesPesquisa[carta] = _normalizarChave(
+        _texto(carta.dados, 'name').replaceAll(RegExp(r'\\([^)]*\\)'), ' '),
+      );
+      numerosPesquisa[carta] = int.tryParse(
+        RegExp(r'^\\d+').firstMatch(_texto(carta.dados, 'number'))?.group(0) ?? '',
+      ) ?? 999999;
+      if (i > 0 && i % 500 == 0) {
+        await Future<void>.delayed(Duration.zero);
+        if (!mounted) return;
+      }
+    }
+    final ordemColecao = <String, int>{};
+    for (var i = 0; i < colecoes.length; i++) {
+      ordemColecao[_normalizarChave(
+        colecoes[i].nome.replaceFirst(RegExp(r'^\\d+_'), '').replaceAll('_', ' '),
+      )] = i;
+    }
 
     List<Carta> buscar(String texto) {
       final termo = _normalizarChave(texto);
@@ -987,6 +990,10 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         ),
       );
     }
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    await carregamento;
 
     await showModalBottomSheet<void>(
       context: context,
