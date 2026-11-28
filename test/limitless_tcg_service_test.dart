@@ -70,8 +70,8 @@ void main() {
       expect(cards, hasLength(2));
       expect(cards.first.quantity, 4);
       expect(cards.first.name, 'Pidgeot ex');
-      expect(cards.first.number, 'sv3');
-      expect(cards.first.collectionId, '125');
+      expect(cards.first.number, '125');
+      expect(cards.first.collectionId, 'sv3');
     });
   });
 }
