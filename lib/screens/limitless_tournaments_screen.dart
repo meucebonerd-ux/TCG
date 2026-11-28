@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/limitless_tcg_service.dart';
+import 'limitless_decklist_screen.dart';
 
 class LimitlessTournamentsScreen extends StatefulWidget {
   const LimitlessTournamentsScreen({super.key});
@@ -427,6 +428,20 @@ class _LimitlessTournamentDetailScreenState
                                   if (standing.deck.isNotEmpty)
                                     standing.deck,
                                 ].join(' • ')),
+                                trailing: standing.decklistUrl.isNotEmpty
+                                    ? const Icon(Icons.chevron_right)
+                                    : null,
+                                onTap: standing.decklistUrl.isEmpty
+                                    ? null
+                                    : () => Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => LimitlessDecklistScreen(
+                                              title: '${standing.player} • ${standing.deck}',
+                                              decklistUrl: standing.decklistUrl,
+                                            ),
+                                          ),
+                                        ),
                               );
                             },
                           ),
