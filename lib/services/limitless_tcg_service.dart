@@ -207,21 +207,48 @@ class LimitlessTcgService {
     final document = html_parser.parse(source);
     final cards = <LimitlessDeckCard>[];
     final seen = <String>{};
-    for (final row in document.querySelectorAll('table tr')) {
-      final link = row.querySelector('a[href*="/cards/"]');
-      if (link == null) continue;
-      final cells = row.querySelectorAll('td');
-      if (cells.isEmpty) continue;
-      final quantity = int.tryParse(cells.first.text.trim());
-      if (quantity == null || quantity < 1 || quantity > 4) continue;
+
+    // Limitless renders current public decklists as card links inside grouped
+    // sections, not consistently as table rows. Read every card link and
+    // recover its quantity from the link or its nearest text container.
+    for (final link in document.querySelectorAll('a[href*="/cards/"]')) {
       final href = link.attributes['href'] ?? '';
-      final path = Uri.tryParse(href)?.pathSegments ?? const <String>[];
-      final number = path.length >= 3 ? path[path.length - 1] : '';
-      final collectionId = path.length >= 2 ? path[path.length - 2] : '';
-      final name = link.text.trim();
-      if (name.isEmpty) continue;
-      final key = '$quantity|$name|$number|$collectionId';
+      final uri = Uri.tryParse(href);
+      final path = uri?.pathSegments ?? const <String>[];
+      if (path.length < 3 || path.first != 'cards') continue;
+
+      final linkText = link.text.replaceAll(RegExp(r'\\s+'), ' ').trim();
+      var quantity = 0;
+      var name = '';
+
+      final linkMatch =
+          RegExp(r'^(\\d+)\\s+(.+)$').firstMatch(linkText);
+      if (linkMatch != null) {
+        quantity = int.tryParse(linkMatch.group(1) ?? '') ?? 0;
+        name = linkMatch.group(2)?.trim() ?? '';
+      } else {
+        // Some layouts place the count next to the anchor rather than inside it.
+        dom.Element? ancestor = link.parent;
+        for (var depth = 0; ancestor != null && depth < 4; depth++) {
+          final text = ancestor.text.replaceAll(RegExp(r'\\s+'), ' ').trim();
+          final match = RegExp(r'^(\\d+)\\s+(.+)$').firstMatch(text);
+          if (match != null) {
+            quantity = int.tryParse(match.group(1) ?? '') ?? 0;
+            final remainder = match.group(2)?.trim() ?? '';
+            name = linkText.isNotEmpty ? linkText : remainder;
+            break;
+          }
+          ancestor = ancestor.parent;
+        }
+      }
+
+      if (quantity < 1 || quantity > 60 || name.isEmpty) continue;
+
+      final number = path.last;
+      final collectionId = path[path.length - 2];
+      final key = '$name|$number|$collectionId';
       if (!seen.add(key)) continue;
+
       cards.add(LimitlessDeckCard(
         quantity: quantity,
         name: name,
