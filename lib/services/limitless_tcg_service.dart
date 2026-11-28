@@ -208,6 +208,7 @@ class LimitlessTcgService {
     final cards = <LimitlessDeckCard>[];
     final seen = <String>{};
 
+    // Supports both legacy table rows and the current grouped card-link layout.
     // Limitless renders current public decklists as card links inside grouped
     // sections, not consistently as table rows. Read every card link and
     // recover its quantity from the link or its nearest text container.
