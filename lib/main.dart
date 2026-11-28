@@ -141,6 +141,15 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   final Map<String, List<Carta>> _cartasPorColecao = {};
   List<Carta>? _cartasBuscaGlobalCache;
 
+  Future<int> _contarImagensDaColecao(Directory pasta) async {
+    var total = 0;
+    await for (final item in pasta.list(recursive: true, followLinks: false)) {
+      if (item is! File) continue;
+      final nome = item.path.toLowerCase();
+      if (extensoesImagem.any((ext) => nome.endsWith(ext))) total++;
+    }
+    return total;
+  }
   Future<void> carregarColecoes() async {
     setState(() { carregando = true; erroMsg = ''; });
     try {
@@ -189,7 +198,9 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         final id = idDaPasta(pasta);
         final logoNome = arquivosLogo[id];
         final logo = logoNome == null ? null : File(pastaLogos.path + '/' + logoNome);
-        final totalIndice = quantidades[id] ?? 0;
+        var totalIndice = quantidades[id] ?? 0;
+        // Quando o JSON não tem os metadados de uma coleção, conta as imagens locais.
+        if (totalIndice == 0) totalIndice = await _contarImagensDaColecao(pasta);
         resultado.add(Colecao(
           nome: _nomePasta(pasta),
           pasta: pasta,
@@ -201,32 +212,54 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       }
       if (!mounted) return;
       setState(() { colecoes = resultado; colecaoSelecionada = null; _cartasPorColecao.clear(); _cartasBuscaGlobalCache = null; _indiceCartasCache = null; carregando = false; });
+      _preparacaoBuscaGlobal = null;
+      unawaited(Future<void>.delayed(const Duration(milliseconds: 100), () {
+        if (!mounted) return Future<void>.value();
+        return _prepararCacheBuscaGlobal().catchError((Object erro) {
+          _preparacaoBuscaGlobal = null;
+          debugPrint('Pré-carregamento da busca global falhou: $erro');
+        });
+      }));
     } catch (e) { if (mounted) setState(() { erroMsg = 'Erro ao carregar coleções: $e'; carregando = false; }); }
   }
 
   Future<Map<String, Map<String, dynamic>>> _carregarIndiceCartas() async {
     if (_indiceCartasCache != null) return _indiceCartasCache!;
-    final conteudo = await rootBundle.loadString('assets/data/dados_cartas.json');
-    final json = jsonDecode(conteudo);
+
+    // O crawler original grava o índice completo neste caminho compartilhado.
+    // O asset embarcado continua como fallback e complemento.
+    final fontes = <String>[];
+    final arquivoExterno = File('/sdcard/meuapp/dados_cartas.json');
+    if (await arquivoExterno.exists()) {
+      fontes.add(await arquivoExterno.readAsString());
+    }
+    fontes.add(await rootBundle.loadString('assets/data/dados_cartas.json'));
+
     final resultado = <String, Map<String, dynamic>>{};
-    if (json is Map && json['cards'] is List) for (final item in json['cards']) {
-      if (item is Map) {
-        final dados = Map<String, dynamic>.from(item);
-        final id = dados['collectionId']?.toString();
-        final arquivo = _arquivoDaCarta(dados);
-        final slug = _texto(dados, 'slug').trim();
-        final nome = _texto(dados, 'name').trim();
-        final identificador = slug.isNotEmpty
-            ? slug
-            : (arquivo.isNotEmpty ? arquivo : nome);
-        // O índice de pesquisa não pode depender da existência de imagem local.
-        // Cartas sem arquivo correspondente também precisam estar disponíveis.
-        if (id != null && id.isNotEmpty && identificador.isNotEmpty) {
-          resultado['$id|${_normalizarChave(identificador)}'] = dados;
+    for (final conteudo in fontes) {
+      try {
+        final json = jsonDecode(conteudo);
+        if (json is! Map || json['cards'] is! List) continue;
+        for (final item in json['cards']) {
+          if (item is! Map) continue;
+          final dados = Map<String, dynamic>.from(item);
+          final id = dados['collectionId']?.toString();
+          final arquivo = _arquivoDaCarta(dados);
+          final slug = _texto(dados, 'slug').trim();
+          final nome = _texto(dados, 'name').trim();
+          final identificador = slug.isNotEmpty ? slug : (arquivo.isNotEmpty ? arquivo : nome);
+          if (id == null || id.isEmpty || identificador.isEmpty) continue;
+          final chave = '$id|${_normalizarChave(identificador)}';
+          // O JSON externo tem prioridade; o asset preenche apenas ausências.
+          resultado.putIfAbsent(chave, () => dados);
         }
+      } catch (e) {
+        debugPrint('Falha ao ler uma fonte do índice de cartas: $e');
       }
     }
-    _indiceCartasCache = resultado; return resultado;
+    _indiceCartasCache = resultado;
+    debugPrint('Índice de cartas carregado: ${resultado.length} registros.');
+    return resultado;
   }
 
   String _slugDoArquivoLocal(String nomeArquivo) {
@@ -338,31 +371,145 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
       .trim();
 
-  void _ordenarCartas(List<Carta> cartas) {
-    int numero(Carta carta) {
-      final direto = carta.dados?['numberSort'];
-      if (direto is num) return direto.toInt();
-      final bruto = _texto(carta.dados, 'number');
-      final match = RegExp(r'\\d+').firstMatch(bruto);
-      return match == null ? 999999 : int.tryParse(match.group(0)!) ?? 999999;
-    }
+  int _ordemTipoPokemon(Carta carta) {
+    const ordem = <String, int>{
+      'grass': 0, 'fire': 1, 'water': 2, 'lightning': 3,
+      'psychic': 4, 'fighting': 5, 'darkness': 6, 'metal': 7,
+      'fairy': 8, 'dragon': 9, 'colorless': 10,
+    };
+    final tipos = _tiposDaCarta(carta);
+    if (tipos.isEmpty) return 99;
+    return ordem[_tipoCanonico(tipos.first)] ?? 99;
+  }
 
-    String complementoNumero(Carta carta) {
-      final bruto = _texto(carta.dados, 'number').toLowerCase().trim();
-      return bruto.replaceFirst(RegExp(r'^\\D*\\d+'), '').trim();
+  String _textoCampos(Map<String, dynamic>? dados, List<String> chaves) {
+    if (dados == null) return '';
+    final partes = <String>[];
+    for (final chave in chaves) {
+      final valor = dados[chave];
+      if (valor is List) {
+        partes.addAll(valor.map((e) => e.toString()));
+      } else if (valor != null) {
+        partes.add(valor.toString());
+      }
+    }
+    return _normalizarChave(partes.join(' '));
+  }
+
+  int _ordemTreinador(Carta carta) {
+    // O índice legado destas quatro expansões marcou todos os Treinadores
+    // como Stadium. Corrige o subtipo pelo nome impresso da carta.
+    if (const {'1153', '1130', '1121', '1118'}.contains(carta.collectionId)) {
+      final nome = _normalizarChave(carta.nome);
+      const estadios = {
+        'holon legacy', 'mt moon', 'high pressure system', 'low pressure system',
+      };
+      const apoiadores = {
+        'copycat', 'holon mentor', 'island hermit', "mr stone s project",
+        'professor elm s training method', 'professor oak s research',
+        'tv reporter', 'bill s maintenance', 'celio s network',
+        'prof oak s research', 'mr briney s compassion',
+      };
+      const ferramentas = {
+        'buffer piece', 'strength charm', 'balloon berry', 'giant cape',
+        'rescue scarf', 'exp all',
+      };
+      if (estadios.contains(nome)) return 1;
+      if (apoiadores.contains(nome)) return 2;
+      if (ferramentas.contains(nome)) return 3;
+      return 0;
+    }
+    final dados = carta.dados;
+    final subtipo = _textoCampos(dados, [
+      'trainerSubtype', 'trainerType', 'subtype', 'subtypes',
+      'cardType', 'category',
+    ]);
+    if (subtipo.contains('stadium') || subtipo.contains('estadio')) return 1;
+    if (subtipo.contains('supporter') || subtipo.contains('apoiador')) return 2;
+    if (subtipo.contains('pokemon tool') ||
+        subtipo.contains('tool') ||
+        subtipo.contains('ferramenta')) return 3;
+    if (subtipo.contains('item') || subtipo.contains('item')) return 0;
+    // Em índices antigos, cartas de Treinador sem subtipo explícito
+    // são tratadas como Itens para não misturá-las aos demais grupos.
+    return 0;
+  }
+
+  bool _ehEnergiaBasica(Carta carta) {
+    final dados = carta.dados;
+    final categoria = _textoCampos(dados, ['energyCategory', 'energyType', 'subtypes']);
+    final nome = _normalizarChave(carta.nome);
+    if (categoria.contains('special') || categoria.contains('especial')) return false;
+    if (categoria.contains('basic') || categoria.contains('basica')) return true;
+    if (nome.contains('special energy') || nome.contains('energia especial')) return false;
+    if (nome.contains('basic energy') || nome.contains('energia basica')) return true;
+    // Nos metadados antigos, energyType sozinho identifica Energia Básica.
+    if (_texto(dados, 'energyType').trim().isNotEmpty) return true;
+    return false;
+  }
+
+  int _ordemEnergia(Carta carta) {
+    if (!_ehEnergiaBasica(carta)) return 100;
+    final energia = _texto(carta.dados, 'energyType').trim();
+    final nome = _normalizarChave(carta.nome);
+    final tipo = _tipoCanonico(energia.isNotEmpty ? energia : nome
+        .replaceAll(' basic energy', '')
+        .replaceAll(' energy', '')
+        .replaceAll(' energia basica', '')
+        .replaceAll(' energia', ''));
+    const ordem = <String, int>{
+      'grass': 0, 'fire': 1, 'water': 2, 'lightning': 3,
+      'psychic': 4, 'fighting': 5, 'darkness': 6, 'metal': 7,
+      'fairy': 8, 'dragon': 9, 'colorless': 10,
+    };
+    return ordem[tipo] ?? 99;
+  }
+
+  String _chaveAlfabetica(Carta carta) {
+    final nome = _normalizarChave(carta.nome);
+    return nome;
+  }
+
+  void _ordenarCartas(List<Carta> cartas) {
+    int grupo(Carta carta) {
+      final categoria = _categoriaDaCarta(carta);
+      if (categoria == 'Pokémon') return 0;
+      if (categoria == 'Treinador / não identificado') return 1;
+      if (categoria == 'Energia') return 2;
+      return 3;
     }
 
     cartas.sort((a, b) {
-      final porNumero = numero(a).compareTo(numero(b));
-      if (porNumero != 0) return porNumero;
-      final porComplemento = complementoNumero(a).compareTo(complementoNumero(b));
-      if (porComplemento != 0) return porComplemento;
-      final porNome = a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
-      if (porNome != 0) return porNome;
-      return _texto(a.dados, 'slug').compareTo(_texto(b.dados, 'slug'));
+      final ga = grupo(a), gb = grupo(b);
+      if (ga != gb) return ga.compareTo(gb);
+
+      if (ga == 0) {
+        final tipo = _ordemTipoPokemon(a).compareTo(_ordemTipoPokemon(b));
+        if (tipo != 0) return tipo;
+        final nome = _chaveAlfabetica(a).compareTo(_chaveAlfabetica(b));
+        if (nome != 0) return nome;
+      } else if (ga == 1) {
+        final sub = _ordemTreinador(a).compareTo(_ordemTreinador(b));
+        if (sub != 0) return sub;
+        final nome = _chaveAlfabetica(a).compareTo(_chaveAlfabetica(b));
+        if (nome != 0) return nome;
+      } else if (ga == 2) {
+        final basicaA = _ehEnergiaBasica(a) ? 0 : 1;
+        final basicaB = _ehEnergiaBasica(b) ? 0 : 1;
+        if (basicaA != basicaB) return basicaA.compareTo(basicaB);
+        if (basicaA == 0) {
+          final tipo = _ordemEnergia(a).compareTo(_ordemEnergia(b));
+          if (tipo != 0) return tipo;
+        }
+        final nome = _chaveAlfabetica(a).compareTo(_chaveAlfabetica(b));
+        if (nome != 0) return nome;
+      }
+
+      final slugA = _texto(a.dados, 'slug');
+      final slugB = _texto(b.dados, 'slug');
+      return slugA.compareTo(slugB);
     });
   }
-
   String _nomeExibicao(Colecao item) =>
       item.nome.replaceFirst(RegExp(r'^\\d+_'), '').replaceAll('_', ' ');
 
@@ -421,12 +568,18 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   String _texto(Map<String, dynamic>? dados, String chave) => (dados?[chave] ?? '').toString();
 
   List<String> _tiposDaCarta(Carta carta) {
-    // O índice antigo juntou tipo do Pokémon com custos de energia dos ataques.
-    // O primeiro item corresponde ao tipo principal; os demais não são tipos da carta.
     final value = carta.dados?['types'];
     if (value is List && value.isNotEmpty) {
-      final principal = value.first.toString().trim();
-      return principal.isEmpty ? <String>[] : <String>[principal];
+      final tipos = value.map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty).toList();
+      if (tipos.isEmpty) return <String>[];
+
+      // Nestas quatro expansões o primeiro ícone é sempre o logo da coleção,
+      // não o tipo impresso da carta. O segundo ícone é o tipo do Pokémon.
+      if (const {'1153', '1130', '1121', '1118'}.contains(carta.collectionId)) {
+        return tipos.length > 1 ? <String>[tipos[1]] : <String>[];
+      }
+      return <String>[tipos.first];
     }
     final energy = _texto(carta.dados, 'energyType').trim();
     return energy.isEmpty ? <String>[] : <String>[energy];
@@ -447,42 +600,73 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
   }
 
   String _categoriaDaCarta(Carta carta) {
-    // O supertype/trainerSubtype do índice histórico está incorreto em muitos
-    // registros. Identificamos Pokémon pelos campos próprios e Energia pelos
-    // campos de energia, sem depender de um único campo incompleto.
     final dados = carta.dados ?? const <String, dynamic>{};
-    final nomeDados = _normalizarChave(_texto(dados, 'name'));
-    final nomeArquivo = _normalizarChave(carta.nome);
-    final nome = nomeDados.isNotEmpty ? nomeDados : nomeArquivo;
 
-    final energyType = _texto(dados, 'energyType').trim();
-    final energyCategory = _texto(dados, 'energyCategory').trim();
-    if (energyType.isNotEmpty ||
-        energyCategory.isNotEmpty ||
-        nome.endsWith(' energy') ||
-        nomeArquivo.endsWith(' energy')) {
-      return 'Energia';
+    // IDs e faixas impressas das cartas nas expansões cujo índice antigo
+    // capturou o logo da coleção como tipo e "Trainer/Stadium" como categoria.
+    // A numeração separa inequivocamente Pokémon, Treinadores e Energias.
+    final numero = int.tryParse(
+      _texto(dados, 'number').split('/').first.trim(),
+    ) ?? int.tryParse(_texto(dados, 'numberSort'));
+    final idColecao = carta.collectionId.isNotEmpty
+        ? carta.collectionId
+        : _texto(dados, 'collectionId');
+    if (numero != null) {
+      const treinadores = <String, Set<int>>{
+        '1153': {113, 114, 115, 116},
+        '1130': {72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83},
+        '1121': {87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102},
+        '1118': {82, 83, 84, 85, 86, 87, 88},
+      };
+      const energias = <String, Set<int>>{
+        '1153': {117, 118},
+        '1130': {84, 85, 86, 87, 88, 89},
+        '1121': {103},
+      };
+      if (energias[idColecao]?.contains(numero) ?? false) return 'Energia';
+      if (treinadores[idColecao]?.contains(numero) ?? false) {
+        return 'Treinador / não identificado';
+      }
+      if (treinadores.containsKey(idColecao)) return 'Pokémon';
     }
 
+    final supertype = _normalizarChave(_texto(dados, 'supertype'));
+    final energyType = _texto(dados, 'energyType').trim();
+    final energyCategory = _texto(dados, 'energyCategory').trim();
+    final nome = _normalizarChave(
+      _texto(dados, 'name').trim().isNotEmpty ? _texto(dados, 'name') : carta.nome,
+    );
     final types = dados['types'];
-    final temTipoPokemon = types is List &&
-        types.isNotEmpty &&
-        types.first.toString().trim().isNotEmpty;
+    final temTipo = types is List &&
+        types.any((item) => item.toString().trim().isNotEmpty);
+
+    // Alguns índices antigos marcaram todas as cartas como Trainer/Stadium.
+    // Neles, Pokémon e Energias ainda conservam o tipo impresso; use esses
+    // sinais para corrigir a categoria sem reclassificar Trainers sem tipo.
+    final pareceEnergia = energyType.isNotEmpty || energyCategory.isNotEmpty ||
+        nome.endsWith(' energy') || nome.endsWith(' energia');
+    if (supertype == 'energy' || supertype == 'energia' || pareceEnergia) {
+      return 'Energia';
+    }
+    if (supertype == 'pokemon' || supertype == 'pokémon') return 'Pokémon';
+    if ((supertype == 'trainer' || supertype == 'treinador') && temTipo) {
+      return 'Pokémon';
+    }
+    if (supertype == 'trainer' || supertype == 'treinador') {
+      return 'Treinador / não identificado';
+    }
+
     final stage = _normalizarChave(_texto(dados, 'stage'));
     const estagiosPokemon = {
       'basic', 'stage 1', 'stage 2', 'vmax', 'vstar',
       'level up', 'break', 'legend', 'v union', 'restored',
     };
     final temEvolucaoPokemon = _texto(dados, 'evolvesFrom').trim().isNotEmpty;
-
-    if (temTipoPokemon ||
-        estagiosPokemon.contains(stage) ||
-        temEvolucaoPokemon) {
+    if (temTipo || estagiosPokemon.contains(stage) || temEvolucaoPokemon) {
       return 'Pokémon';
     }
     return 'Treinador / não identificado';
   }
-
   String _raridadeDaCarta(Carta carta) {
     final value = carta.dados?['rarity'] ?? carta.dados?['rarities'];
     if (value is List) return value.map((e) => e.toString()).join(', ');
@@ -569,9 +753,9 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     );
   }
 
-  Future<void> _abrirBuscaGlobal() async {
-    // A pesquisa é construída diretamente do índice completo, nunca da lista
-    // de pastas/imagens disponíveis no dispositivo.
+  Future<void>? _preparacaoBuscaGlobal;
+
+  Future<void> _montarCacheBuscaGlobal() async {
     final indiceCompleto = await _carregarIndiceCartas();
     if (_cartasBuscaGlobalCache == null) {
     final colecoesPorId = <String, Colecao>{
@@ -580,19 +764,26 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     // O cache de coleções só contém imagens das coleções já abertas.
     // Para a busca global, indexamos os arquivos reais de todas as pastas.
     final imagensPorChave = <String, File>{};
+    final imagensPorSlug = <String, File>{};
     for (final colecao in colecoes) {
+      // Cede um frame entre coleções para manter o indicador e os toques responsivos.
+      await Future<void>.delayed(Duration.zero);
+      if (!mounted) return;
       final id = colecao.nome.split('_').first;
       await for (final item in colecao.pasta.list(recursive: true, followLinks: false)) {
         if (item is! File) continue;
-        final nomeArquivo = item.uri.pathSegments.isNotEmpty
-            ? item.uri.pathSegments.last
-            : item.path.split(Platform.pathSeparator).last;
+        final nomeArquivo = item.uri.pathSegments.isNotEmpty ? item.uri.pathSegments.last : item.path.split(Platform.pathSeparator).last;
         final ponto = nomeArquivo.lastIndexOf('.');
         final ext = ponto >= 0 ? nomeArquivo.substring(ponto).toLowerCase() : '';
         if (!extensoesImagem.contains(ext)) continue;
-        imagensPorChave['$id|${_normalizarChave(nomeArquivo)}'] = item;
+        final chaveArquivo = id + '|' + _normalizarChave(nomeArquivo);
+        imagensPorChave[chaveArquivo] = item;
         final slugLocal = _slugDoArquivoLocal(nomeArquivo);
-        if (slugLocal.isNotEmpty) imagensPorChave['$id|${_normalizarChave(slugLocal)}'] = item;
+        if (slugLocal.isNotEmpty) {
+          final chaveSlug = id + '|' + _normalizarChave(slugLocal);
+          imagensPorChave[chaveSlug] = item;
+          imagensPorSlug[chaveSlug] = item;
+        }
       }
     }
     final cartasPreparadas = <Carta>[];
@@ -621,47 +812,112 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         collectionId: id,
       ));
     }
-    final chavesBusca = <String>{};
+    // Inclui também imagens locais que ainda não possuem registro no índice.
+    final chavesIndexadas = <String>{};
     for (final carta in cartasPreparadas) {
       final slug = _texto(carta.dados, 'slug').trim();
-      final arquivo = carta.arquivo.uri.pathSegments.isEmpty ? carta.arquivo.path.split(Platform.pathSeparator).last : carta.arquivo.uri.pathSegments.last;
+      final arquivo = _arquivoDaCarta(carta.dados);
       final identificador = slug.isNotEmpty ? slug : _slugDoArquivoLocal(arquivo);
-      chavesBusca.add(carta.collectionId + '|' + _normalizarChave(identificador));
+      if (identificador.isNotEmpty) chavesIndexadas.add(carta.collectionId + '|' + _normalizarChave(identificador));
     }
-    for (final colecao in colecoes) {
-      final cartasLocais = await _carregarCartasDaColecao(colecao);
-      for (final carta in cartasLocais) {
-        final slug = _texto(carta.dados, 'slug').trim();
-        final arquivo = carta.arquivo.uri.pathSegments.isEmpty ? carta.arquivo.path.split(Platform.pathSeparator).last : carta.arquivo.uri.pathSegments.last;
-        final identificador = slug.isNotEmpty ? slug : _slugDoArquivoLocal(arquivo);
-        final chave = carta.collectionId + '|' + _normalizarChave(identificador);
-        if (identificador.isNotEmpty && chavesBusca.add(chave)) cartasPreparadas.add(carta);
-      }
+    for (final entry in imagensPorSlug.entries) {
+      if (chavesIndexadas.contains(entry.key)) continue;
+      final separador = entry.key.indexOf('|');
+      if (separador <= 0) continue;
+      final id = entry.key.substring(0, separador);
+      final slug = entry.key.substring(separador + 1);
+      final colecao = colecoesPorId[id];
+      if (colecao == null) continue;
+      final nomeColecao = colecao.nome.replaceFirst(RegExp(r'^\\d+_'), '').replaceAll('_', ' ');
+      final nome = _nomeLegivelDoSlug(slug);
+      final partes = slug.split('-');
+      final numero = partes.length >= 2 ? int.tryParse(partes[partes.length - 2]) : null;
+      final total = partes.isNotEmpty ? int.tryParse(partes.last) : null;
+      final dados = <String, dynamic>{
+        'collectionId': id, 'collectionName': nomeColecao, 'slug': slug,
+        'file': entry.value.uri.pathSegments.last, 'name': nome,
+        'number': numero == null ? '' : numero.toString().padLeft(3, '0') + '/' + (total?.toString() ?? ''),
+        'numberSort': numero, 'supertype': 'Unknown', 'types': <String>[], 'needsReview': true,
+      };
+      cartasPreparadas.add(Carta(nome: nome.isEmpty ? slug : nome, arquivo: entry.value, dados: dados, collectionName: nomeColecao, collectionId: id));
     }
     _cartasBuscaGlobalCache = cartasPreparadas;
     }
+  }
+
+  Future<void> _prepararCacheBuscaGlobal() {
+    if (_cartasBuscaGlobalCache != null) return Future<void>.value();
+    return _preparacaoBuscaGlobal ??= _montarCacheBuscaGlobal();
+  }
+
+  Future<void> _abrirBuscaGlobal() async {
+    if (!mounted) return;
+    if (colecoes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('As coleções ainda não foram carregadas. Aguarde e tente novamente.')),
+      );
+      return;
+    }
+    final carregamento = showDialog<void>(
+      context: context, barrierDismissible: false,
+      builder: (dialogContext) => const PopScope(
+        canPop: false,
+        child: AlertDialog(content: Row(children: [
+          SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 3)),
+          SizedBox(width: 16), Expanded(child: Text('Preparando a busca global...')),
+        ])),
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 16));
+    try {
+    await _prepararCacheBuscaGlobal();
+    if (!mounted) return;
+    } catch (e) {
+      if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      await carregamento;
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível preparar a busca: $e')));
+      return;
+    }
     final todasCartas = _cartasBuscaGlobalCache!;
-    final categoriasBusca = todasCartas.map(_categoriaDaCarta).toSet().toList()..sort();
+    final categoriasSet = <String>{};
+    for (var i = 0; i < todasCartas.length; i++) {
+      categoriasSet.add(_categoriaDaCarta(todasCartas[i]));
+      if (i > 0 && i % 500 == 0) {
+        await Future<void>.delayed(Duration.zero);
+        if (!mounted) return;
+      }
+    }
+    final categoriasBusca = categoriasSet.toList()..sort();
     final controller = TextEditingController();
     Timer? debounceBusca;
     var categoriaSelecionada = 'Todos';
+    var ordemBusca = 'recentes';
+    final preferenciasBusca = await SharedPreferences.getInstance();
+    ordemBusca = preferenciasBusca.getString('ordem_busca_global') ?? 'recentes';
     var resultadosAtuais = <Carta>[];
 
-    final nomesPesquisa = <Carta, String>{
-      for (final carta in todasCartas)
-        carta: _normalizarChave(
-          _texto(carta.dados, 'name').replaceAll(RegExp(r'\\([^)]*\\)'), ' '),
-        ),
-    };
+    final nomesPesquisa = <Carta, String>{};
+    final numerosPesquisa = <Carta, int>{};
+    for (var i = 0; i < todasCartas.length; i++) {
+      final carta = todasCartas[i];
+      nomesPesquisa[carta] = _normalizarChave(
+        _texto(carta.dados, 'name').replaceAll(RegExp(r'\\([^)]*\\)'), ' '),
+      );
+      numerosPesquisa[carta] = int.tryParse(
+        RegExp(r'^\\d+').firstMatch(_texto(carta.dados, 'number'))?.group(0) ?? '',
+      ) ?? 999999;
+      if (i > 0 && i % 500 == 0) {
+        await Future<void>.delayed(Duration.zero);
+        if (!mounted) return;
+      }
+    }
+    // A lista de coleções já segue a ordem oficial do catálogo: mais novas primeiro.
+    // Usamos o ID da coleção, não o nome, pois nomes do índice podem variar.
     final ordemColecao = <String, int>{
       for (var i = 0; i < colecoes.length; i++)
-        _normalizarChave(colecoes[i].nome.replaceFirst(RegExp(r'^\\d+_'), '').replaceAll('_', ' ')): i,
-    };
-    final numerosPesquisa = <Carta, int>{
-      for (final carta in todasCartas)
-        carta: int.tryParse(
-          RegExp(r'^\\d+').firstMatch(_texto(carta.dados, 'number'))?.group(0) ?? '',
-        ) ?? 999999,
+        colecoes[i].nome.split('_').first: i,
     };
 
     List<Carta> buscar(String texto) {
@@ -728,10 +984,11 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       }
 
       resultados.sort((a, b) {
-        final nomeA = _normalizarChave(a.collectionName);
-        final nomeB = _normalizarChave(b.collectionName);
-        final lancamento = (ordemColecao[nomeA] ?? 999999)
-            .compareTo(ordemColecao[nomeB] ?? 999999);
+        final indiceA = ordemColecao[a.collectionId] ?? 999999;
+        final indiceB = ordemColecao[b.collectionId] ?? 999999;
+        final lancamento = ordemBusca == 'recentes'
+            ? indiceA.compareTo(indiceB)
+            : indiceB.compareTo(indiceA);
         if (lancamento != 0) return lancamento;
         final numero = (numerosPesquisa[a] ?? 999999)
             .compareTo(numerosPesquisa[b] ?? 999999);
@@ -754,10 +1011,16 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
           builder: (_) => BuscaGlobalResultadosScreen(
             termo: termo,
             cartas: resultados,
+            ordemColecao: ordemColecao,
+            ordemInicial: ordemBusca,
           ),
         ),
       );
     }
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    await carregamento;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -950,7 +1213,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
       appBar: AppBar(
         title: Text(selecionada == null ? 'Cartas' : selecionada.nome),
         actions: [
-          IconButton(tooltip: 'Pesquisa global', onPressed: colecoes.isEmpty ? null : _abrirBuscaGlobal, icon: const Icon(Icons.manage_search)),
+          IconButton(tooltip: 'Pesquisa global', onPressed: _abrirBuscaGlobal, icon: const Icon(Icons.manage_search)),
           if (selecionada != null)
             IconButton(tooltip: 'Filtrar cartas', onPressed: _abrirFiltrosColecao, icon: const Icon(Icons.filter_list)),
           ValueListenableBuilder<bool>(
@@ -1165,15 +1428,66 @@ class CartasScreen extends StatelessWidget {
   }
 }
 
-class BuscaGlobalResultadosScreen extends StatelessWidget {
+class BuscaGlobalResultadosScreen extends StatefulWidget {
   final String termo;
   final List<Carta> cartas;
+  final Map<String, int> ordemColecao;
+  final String ordemInicial;
 
   const BuscaGlobalResultadosScreen({
     super.key,
     required this.termo,
     required this.cartas,
+    required this.ordemColecao,
+    required this.ordemInicial,
   });
+
+  @override
+  State<BuscaGlobalResultadosScreen> createState() =>
+      _BuscaGlobalResultadosScreenState();
+}
+
+class _BuscaGlobalResultadosScreenState
+    extends State<BuscaGlobalResultadosScreen> {
+  late String ordem;
+  late List<Carta> cartasOrdenadas;
+
+  @override
+  void initState() {
+    super.initState();
+    ordem = widget.ordemInicial;
+    cartasOrdenadas = List<Carta>.of(widget.cartas);
+    _ordenarCartas();
+  }
+
+  void _ordenarCartas() {
+    cartasOrdenadas.sort((a, b) {
+      final indiceA = widget.ordemColecao[a.collectionId] ?? 999999;
+      final indiceB = widget.ordemColecao[b.collectionId] ?? 999999;
+      final lancamento = ordem == 'recentes'
+          ? indiceA.compareTo(indiceB)
+          : indiceB.compareTo(indiceA);
+      if (lancamento != 0) return lancamento;
+      final numeroA = int.tryParse(
+        RegExp(r'^\\d+').firstMatch((a.dados?['number']?.toString() ?? ''))?.group(0) ?? '',
+      ) ?? 999999;
+      final numeroB = int.tryParse(
+        RegExp(r'^\\d+').firstMatch((b.dados?['number']?.toString() ?? ''))?.group(0) ?? '',
+      ) ?? 999999;
+      if (numeroA != numeroB) return numeroA.compareTo(numeroB);
+      return a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
+    });
+  }
+
+  Future<void> _alterarOrdem(String? novaOrdem) async {
+    if (novaOrdem == null) return;
+    setState(() {
+      ordem = novaOrdem;
+      _ordenarCartas();
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('ordem_busca_global', novaOrdem);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1189,14 +1503,37 @@ class BuscaGlobalResultadosScreen extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    '"$termo"',
+                    '"${widget.termo}"',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                Text('${cartas.length} cartas'),
+                Text('${cartasOrdenadas.length} cartas'),
               ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+            child: DropdownButtonFormField<String>(
+              value: ordem,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Ordem de exibição',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: 'recentes',
+                  child: Text('Mais recentes primeiro'),
+                ),
+                DropdownMenuItem(
+                  value: 'antigos',
+                  child: Text('Mais antigos primeiro'),
+                ),
+              ],
+              onChanged: _alterarOrdem,
             ),
           ),
           Expanded(
@@ -1208,9 +1545,9 @@ class BuscaGlobalResultadosScreen extends StatelessWidget {
                 crossAxisSpacing: 8,
                 mainAxisSpacing: 8,
               ),
-              itemCount: cartas.length,
+              itemCount: cartasOrdenadas.length,
               itemBuilder: (context, index) {
-                final carta = cartas[index];
+                final carta = cartasOrdenadas[index];
                 return InkWell(
                   onTap: () => Navigator.push(
                     context,

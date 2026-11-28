@@ -6,6 +6,7 @@ import * as cheerio from 'cheerio';
 const ROOT='/sdcard/meuapp', OUT=path.join(ROOT,'dados_cartas.json');
 const REPO_OUT=path.join(process.cwd(),'assets/data/dados_cartas.json');
 const TARGET_ID=process.argv.find(x=>x.startsWith('--id='))?.slice(5);
+const FORCE_REINDEX=process.argv.includes('--force');
 const REPORT='/sdcard/Download/relatorio_indice_cartas.json';
 const INPUT=path.join(process.cwd(),'tcgcollector_362_ids.txt');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -26,38 +27,53 @@ async function fetchHtml(url){
 function parseCard($,url){
   const body=$('body').text().replace(/\s+/g,' ').trim();
   const title=$('h1').first().text().trim()||$('meta[property="og:title"]').attr('content')||$('title').text().trim();
-  const low=norm(body), slug=slugOf(url);
+  const slug=slugOf(url);
   const num=body.match(/\b(\d{1,4})\s*\/\s*(\d{1,4})\b/);
-  const known=['Grass','Fire','Water','Lightning','Psychic','Fighting','Darkness','Metal','Fairy','Dragon','Colorless'];
-  const types=[];
-  $('img,[title],[aria-label],[alt]').each((_,el)=>{
-    const v=[$(el).attr('alt'),$(el).attr('title'),$(el).attr('aria-label'),$(el).attr('data-type'),$(el).attr('class')].filter(Boolean).join(' ');
-    for(const t of known)if(norm(v).includes(norm(t))&&!types.includes(t))types.push(t);
-  });
+
+  // A categoria fica imediatamente após o HP. Não procurar "Trainer" no
+  // texto inteiro: ataques, descrições e navegação podem conter essa palavra.
+  const hpCategory=body.match(/\bHP\s*\d+\s*(Pokémon|Pokemon|Trainer|Energy)\b/i);
   let supertype='Unknown';
-  if(/\btrainer\b/.test(low))supertype='Trainer';
-  else if(/\b(?:basic|special)\s+energy\b/.test(low))supertype='Energy';
-  else if(/\bpokemon\b/.test(low))supertype='Pokemon';
-  else if(/\benergy\b/.test(low))supertype='Energy';
-  const sm=body.match(/\b(Basic|Stage\s*1|Stage\s*2|Level[- ]?Up|Restored|BREAK|LEGEND|VMAX|VSTAR|V-UNION)\s*(?:Pok[eé]mon)?\b/i);
-  let stage=sm?sm[1].replace(/\s+/g,' ').replace(/^./,c=>c.toUpperCase()):null;
-  const em=body.match(/Evolves\s+from\s+([A-Za-z0-9'’ .-]+?)(?=\s+(?:HP|Pok[eé]mon|Stage|Type|Weakness|Resistance|Retreat|Expansion|Card number|Illustrator)\b|$)/i);
+  if(hpCategory){
+    const label=norm(hpCategory[1]);
+    supertype=label==='pokemon'?'Pokemon':label==='trainer'?'Trainer':'Energy';
+  } else if(/\b(?:Basic|Special)\s+Energy\b/i.test(body) && !/\bHP\s*\d+\s*Pok(?:é)?mon\b/i.test(body)) {
+    supertype='Energy';
+  }
+
+  // Na página de carta, o primeiro ícone de tipo depois da categoria é o
+  // tipo impresso do Pokémon/Energia. Ícones posteriores pertencem a ataques,
+  // fraqueza ou custo de recuo e não podem ser agregados.
+  const known=['Grass','Fire','Water','Lightning','Psychic','Fighting','Darkness','Metal','Fairy','Dragon','Colorless'];
+  const imageTypes=[];
+  $('img[alt]').each((_,el)=>{
+    const alt=String($(el).attr('alt')||'').trim();
+    const match=known.find(t=>norm(alt)===norm(t));
+    if(match) imageTypes.push(match);
+  });
+  const types=(supertype==='Pokemon'||supertype==='Energy')&&imageTypes.length?[imageTypes[0]]:[];
+
+  const stageMatch=supertype==='Pokemon'
+    ? body.match(/\b(Basic|Stage\s*1|Stage\s*2|Level[- ]?Up|Restored|BREAK|LEGEND|VMAX|VSTAR|V-UNION|MEGA)\b/i)
+    : null;
+  const stage=stageMatch?stageMatch[1].replace(/\s+/g,' ').replace(/^./,x=>x.toUpperCase()):null;
+  const em=supertype==='Pokemon'?body.match(/Evolves\s+from\s+([A-Za-z0-9'’ .-]+?)(?=\s+(?:HP|Pok[eé]mon|Stage|Type|Weakness|Resistance|Retreat|Expansion|Card number|Illustrator)\b|$)/i):null;
   const evolvesFrom=em?em[1].trim().replace(/[.,;]+$/,''):null;
+
   let trainerSubtype=null;
   if(supertype==='Trainer'){
-    if(/\bpokemon\s+tool\b/i.test(body))trainerSubtype='Pokemon Tool';
-    else if(/\bstadium\b/i.test(body))trainerSubtype='Stadium';
-    else if(/\bsupporter\b/i.test(body))trainerSubtype='Supporter';
-    else if(/\bitem\b/i.test(body))trainerSubtype='Item';
+    const category=body.match(/\bHP\s*\d+\s*Trainer\s+(Pokémon\s+Tool|Pokemon\s+Tool|Supporter|Stadium|Item)\b/i);
+    const label=category?.[1]||body.match(/\b(Pokémon\s+Tool|Pokemon\s+Tool|Supporter|Stadium|Item)\b/i)?.[1]||'';
+    const n=norm(label);
+    trainerSubtype=n.includes('tool')?'Pokemon Tool':n==='supporter'?'Supporter':n==='stadium'?'Stadium':n==='item'?'Item':null;
   }
-  let energyCategory=null;
-  if(supertype==='Energy')energyCategory=/special\s+energy/i.test(body)?'Special':(/basic\s+energy/i.test(body)?'Basic':'Unknown');
+  const energyCategory=supertype==='Energy'?( /\bSpecial\s+Energy\b/i.test(body)?'Special':(/\bBasic\s+Energy\b/i.test(body)?'Basic':null)):null;
+  const energyType=supertype==='Energy'?(types[0]||null):null;
   const name=title.split('|')[0].replace(/\s*-\s*TCG Collector.*$/i,'').trim();
   const record={slug,url,name,number:num?num[1]+'/'+num[2]:null,numberSort:num?Number(num[1]):null,
-    supertype,types,stage,evolvesFrom,trainerSubtype,energyCategory,
-    energyType:supertype==='Energy'?(types[0]||null):null};
+    supertype,types,stage,evolvesFrom,trainerSubtype,energyCategory,energyType};
   record.needsReview=supertype==='Unknown'||(supertype==='Pokemon'&&(!stage||!types.length))||
-    (supertype==='Trainer'&&!trainerSubtype)||(supertype==='Energy'&&(!energyCategory||energyCategory==='Unknown'));
+    (supertype==='Trainer'&&!trainerSubtype)||(supertype==='Energy'&&(!energyCategory||!energyType));
   return record;
 }
 async function main(){
@@ -95,7 +111,7 @@ async function main(){
         cardCount++;
         const key=set.id+'|'+slug, filesForCard=bySlug.get(slug)||[];
         let record=index.get(key);
-        if(!record||record.needsReview||!record.name){
+        if(FORCE_REINDEX||!record||record.needsReview||!record.name){
           try{record={...parseCard(cheerio.load(await fetchHtml(url)),url),collectionId:String(set.id),collectionName:set.name||folder.name,files:filesForCard};index.set(key,record)}
           catch(e){errorCount++;record=record||{slug,url,collectionId:String(set.id),collectionName:set.name||folder.name,supertype:'Unknown',types:[],files:filesForCard,needsReview:true,error:String(e)};record.files=filesForCard;index.set(key,record)}
         }else{record.files=filesForCard;index.set(key,record)}

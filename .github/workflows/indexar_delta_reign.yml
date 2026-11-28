@@ -1,4 +1,4 @@
-name: Indexar Delta Reign e gerar APK
+name: Reconstruir Delta Reign e gerar APK
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
       collection_id:
         description: "ID numérico da coleção no TCG Collector"
         required: true
+        default: "111247"
         type: string
       collection_name:
         description: "Nome da coleção"
@@ -13,13 +14,19 @@ on:
         default: "Delta Reign"
         type: string
       collection_slug:
-        description: "Slug da URL (opcional)"
-        required: false
+        description: "Slug da URL"
+        required: true
+        default: "delta-reign"
         type: string
       expected_count:
-        description: "Quantidade esperada de cartas (opcional)"
-        required: false
+        description: "Quantidade esperada de cartas"
+        required: true
         default: "141"
+        type: string
+      tcgdex_set_id:
+        description: "ID da coleção no TCGdex"
+        required: true
+        default: "me06"
         type: string
 
 permissions:
@@ -28,25 +35,33 @@ permissions:
 jobs:
   indexar-e-compilar:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - name: Baixar projeto
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
       - name: Preparar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Instalar parser HTML
+
+      - name: Instalar parser e GhostFetch
         run: npm install --no-save cheerio@1.0.0-rc.12 ghostfetch@0.1.2
+
       - name: Validar sintaxe do indexador
         run: node --check scripts/indexar-delta-reign.mjs
-      - name: Indexar coleção do TCG Collector
+
+      - name: Reconstruir metadados usando TCGdex e slugs do TCG Collector
         env:
-          COLLECTION_ID: ${{ inputs.collection_id }}
-          COLLECTION_NAME: ${{ inputs.collection_name }}
-          COLLECTION_SLUG: ${{ inputs.collection_slug }}
-          EXPECTED_COUNT: ${{ inputs.expected_count }}
+          COLLECTION_ID: ${{ inputs.collection_id || '111247' }}
+          COLLECTION_NAME: ${{ inputs.collection_name || 'Delta Reign' }}
+          COLLECTION_SLUG: ${{ inputs.collection_slug || 'delta-reign' }}
+          EXPECTED_COUNT: ${{ inputs.expected_count || '141' }}
+          TCGDEX_SET_ID: ${{ inputs.tcgdex_set_id || 'me06' }}
         run: node scripts/indexar-delta-reign.mjs
+
       - name: Salvar índice no GitHub
         run: |
           git config user.name "github-actions[bot]"
@@ -55,23 +70,41 @@ jobs:
           if git diff --cached --quiet; then
             echo "O índice já estava atualizado."
           else
-            git commit -m "Atualiza índice da coleção"
-            git push
+            git commit -m "Reconstrói índice de Delta Reign com metadados validados"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
+
       - name: Preparar Java
         uses: actions/setup-java@v4
         with:
           distribution: "zulu"
           java-version: "17"
+
       - name: Preparar Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.19.0"
           channel: "stable"
+
       - name: Instalar dependências Flutter
         run: flutter pub get
+
       - name: Compilar APK
-        run: flutter build apk --release
+        shell: bash
+        run: |
+          for attempt in 1 2 3 4; do
+            echo "Build attempt $attempt/4"
+            if flutter build apk --release; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 4 ]; then
+              wait_seconds=$((attempt * 60))
+              echo "Build falhou; aguardando ${wait_seconds}s antes de tentar novamente."
+              sleep "$wait_seconds"
+            fi
+          done
+          exit 1
+
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
