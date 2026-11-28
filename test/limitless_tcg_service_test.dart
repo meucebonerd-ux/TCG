@@ -56,5 +56,22 @@ void main() {
       expect(standings.single.country, 'FI');
       expect(standings.single.deck, 'Slowking');
     });
+
+    test('extracts card quantities and identifiers from a public decklist', () {
+      const html = '''
+        <html><body><table>
+          <tr><td>4</td><td><a href="/cards/sv3/125">Pidgeot ex</a></td></tr>
+          <tr><td>2</td><td><a href="/cards/sv3/126">Pidgeotto</a></td></tr>
+        </table></body></html>
+      ''';
+
+      final cards = LimitlessTcgService.parseDecklist(html);
+
+      expect(cards, hasLength(2));
+      expect(cards.first.quantity, 4);
+      expect(cards.first.name, 'Pidgeot ex');
+      expect(cards.first.number, 'sv3');
+      expect(cards.first.collectionId, '125');
+    });
   });
 }
