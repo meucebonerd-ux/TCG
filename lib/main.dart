@@ -1445,8 +1445,8 @@ class _BuscaGlobalResultadosScreenState
 
   void _ordenarCartas() {
     cartasOrdenadas.sort((a, b) {
-      final nomeA = _normalizarChave(a.collectionName);
-      final nomeB = _normalizarChave(b.collectionName);
+      final nomeA = a.collectionName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+      final nomeB = b.collectionName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
       final indiceA = widget.ordemColecao[nomeA] ?? 999999;
       final indiceB = widget.ordemColecao[nomeB] ?? 999999;
       final lancamento = ordem == 'recentes'
@@ -1454,10 +1454,10 @@ class _BuscaGlobalResultadosScreenState
           : indiceA.compareTo(indiceB);
       if (lancamento != 0) return lancamento;
       final numeroA = int.tryParse(
-        RegExp(r'^\\d+').firstMatch(_texto(a.dados, 'number'))?.group(0) ?? '',
+        RegExp(r'^\\d+').firstMatch((a.dados?['number']?.toString() ?? ''))?.group(0) ?? '',
       ) ?? 999999;
       final numeroB = int.tryParse(
-        RegExp(r'^\\d+').firstMatch(_texto(b.dados, 'number'))?.group(0) ?? '',
+        RegExp(r'^\\d+').firstMatch((b.dados?['number']?.toString() ?? ''))?.group(0) ?? '',
       ) ?? 999999;
       if (numeroA != numeroB) return numeroA.compareTo(numeroB);
       return a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
