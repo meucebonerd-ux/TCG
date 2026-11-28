@@ -230,17 +230,32 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     // O asset embarcado continua como fallback e complemento.
     final fontes = <String>[];
     final arquivoExterno = File('/sdcard/meuapp/dados_cartas.json');
+
+    // Cada fonte é lida isoladamente: uma cópia externa ausente ou inválida
+    // nunca impede o carregamento do índice embarcado no APK.
     if (await arquivoExterno.exists()) {
-      fontes.add(await arquivoExterno.readAsString());
+      try {
+        fontes.add(await arquivoExterno.readAsString());
+      } catch (e) {
+        debugPrint('Não foi possível ler o índice externo: $e');
+      }
     }
-    fontes.add(await rootBundle.loadString('assets/data/dados_cartas.json'));
+    try {
+      fontes.add(await rootBundle.loadString('assets/data/dados_cartas.json'));
+    } catch (e) {
+      debugPrint('Não foi possível ler o índice offline do aplicativo: $e');
+    }
 
     final resultado = <String, Map<String, dynamic>>{};
     for (final conteudo in fontes) {
       try {
         final json = jsonDecode(conteudo);
-        if (json is! Map || json['cards'] is! List) continue;
-        for (final item in json['cards']) {
+        final cards = json is Map ? json['cards'] : (json is List ? json : null);
+        if (cards is! List) {
+          debugPrint('Fonte do índice ignorada: formato JSON sem lista de cartas.');
+          continue;
+        }
+        for (final item in cards) {
           if (item is! Map) continue;
           final dados = Map<String, dynamic>.from(item);
           final id = dados['collectionId']?.toString();
@@ -250,11 +265,11 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
           final identificador = slug.isNotEmpty ? slug : (arquivo.isNotEmpty ? arquivo : nome);
           if (id == null || id.isEmpty || identificador.isEmpty) continue;
           final chave = '$id|${_normalizarChave(identificador)}';
-          // O JSON externo tem prioridade; o asset preenche apenas ausências.
+          // O índice externo tem prioridade; o asset completa os registros ausentes.
           resultado.putIfAbsent(chave, () => dados);
         }
       } catch (e) {
-        debugPrint('Falha ao ler uma fonte do índice de cartas: $e');
+        debugPrint('Falha ao interpretar uma fonte do índice de cartas: $e');
       }
     }
     _indiceCartasCache = resultado;
@@ -667,17 +682,28 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     }
     return 'Treinador / não identificado';
   }
-  String _raridadeDaCarta(Carta carta) {
+  List<String> _raridadesDaCarta(Carta carta) {
     final value = carta.dados?['rarity'] ?? carta.dados?['rarities'];
-    if (value is List) return value.map((e) => e.toString()).join(', ');
-    return (value ?? '').toString();
+    final valores = value is List ? value : (value == null ? const [] : [value]);
+    return valores
+        .expand((item) => item.toString().split(RegExp(r'[,;|]')))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toSet()
+        .toList();
   }
 
+  String _raridadeDaCarta(Carta carta) => _raridadesDaCarta(carta).join(', ');
+
   bool _cartaPassaFiltros(Carta carta) {
-    final tipoOk = filtroTipo == 'Todos' || _tiposDaCarta(carta).any((t) => _tipoCanonico(t) == _tipoCanonico(filtroTipo));
-    final raridade = _raridadeDaCarta(carta);
-    final raridadeOk = filtroRaridade == 'Todas' || (raridade.isNotEmpty && raridade == filtroRaridade);
-    final categoriaOk = filtroCategoria == 'Todas' || _categoriaDaCarta(carta) == filtroCategoria;
+    final tipoOk = filtroTipo == 'Todos' ||
+        _tiposDaCarta(carta).any((t) =>
+            _tipoCanonico(t) == _tipoCanonico(filtroTipo));
+    final raridades = _raridadesDaCarta(carta);
+    final raridadeOk = filtroRaridade == 'Todas' ||
+        raridades.any((r) => _normalizarChave(r) == _normalizarChave(filtroRaridade));
+    final categoriaOk = filtroCategoria == 'Todas' ||
+        _categoriaDaCarta(carta) == filtroCategoria;
     return tipoOk && raridadeOk && categoriaOk;
   }
 
@@ -688,8 +714,7 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
     final categorias = <String>{};
     for (final carta in cartas) {
       tipos.addAll(_tiposDaCarta(carta));
-      final raridade = _raridadeDaCarta(carta);
-      if (raridade.isNotEmpty) raridades.add(raridade);
+      raridades.addAll(_raridadesDaCarta(carta));
       categorias.add(_categoriaDaCarta(carta));
     }
     final tiposOrdenados = tipos.toList()..sort();
