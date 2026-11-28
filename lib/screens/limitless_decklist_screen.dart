@@ -95,8 +95,8 @@ class _LimitlessDecklistScreenState extends State<LimitlessDecklistScreen> {
             final id = item['collectionId']?.toString() ?? '';
             final slug = item['slug']?.toString() ?? '';
             final file = item['file']?.toString() ?? '';
-            final key = '\$id|\${_fileKey(slug.isNotEmpty ? slug : file)}';
-            if (id.isNotEmpty && key != '\$id|') {
+            final key = '$id|${_fileKey(slug.isNotEmpty ? slug : file)}';
+            if (id.isNotEmpty && key != '$id|') {
               indexByKey.putIfAbsent(key, () => item);
             }
           }
@@ -140,7 +140,7 @@ class _LimitlessDecklistScreenState extends State<LimitlessDecklistScreen> {
               .any(path.endsWith)) continue;
           final key = _fileKey(entity.uri.pathSegments.last);
           if (key.isNotEmpty) {
-            imageFiles.putIfAbsent('\$collectionId|\$key', () => entity);
+            imageFiles.putIfAbsent('$collectionId|$key', () => entity);
           }
         }
       }
@@ -166,16 +166,16 @@ class _LimitlessDecklistScreenState extends State<LimitlessDecklistScreen> {
           final slug = item['slug']?.toString() ?? '';
           final file = item['file']?.toString() ?? '';
           final key = _fileKey(slug.isNotEmpty ? slug : file);
-          foundImage = imageFiles['\$collectionId|\$key'];
+          foundImage = imageFiles['$collectionId|$key'];
           if (foundImage != null) break;
         }
-        resolved['\${deckCard.name}|\${deckCard.number}'] = foundImage;
+        resolved['${deckCard.name}|${deckCard.number}'] = foundImage;
       }
 
       if (!mounted) return;
       setState(() => _images.addAll(resolved));
     } catch (error) {
-      debugPrint('Falha ao localizar imagens locais da decklist: \$error');
+      debugPrint('Falha ao localizar imagens locais da decklist: $error');
     }
   }
 
