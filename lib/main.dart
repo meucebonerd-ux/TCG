@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'screens/limitless_tournaments_screen.dart';
 
 const String raizColecoes = '/sdcard/meuapp/tcg físico';
 const Set<String> extensoesImagem = {'.jpg', '.jpeg', '.png', '.webp', '.gif'};
@@ -1210,6 +1211,41 @@ class _ColecoesScreenState extends State<ColecoesScreen> {
         return true;
       },
       child: Scaffold(
+      drawer: Drawer(
+        child: SafeArea(
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              const DrawerHeader(
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Text('Pokemon TCG Manager',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.collections_bookmark_outlined),
+                title: const Text('Coleções'),
+                onTap: () => Navigator.pop(context),
+              ),
+              ListTile(
+                leading: const Icon(Icons.emoji_events_outlined),
+                title: const Text('Torneios presenciais'),
+                subtitle: const Text('Resultados e classificações'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const LimitlessTournamentsScreen(),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
       appBar: AppBar(
         title: Text(selecionada == null ? 'Cartas' : selecionada.nome),
         actions: [
