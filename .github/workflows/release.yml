@@ -7,13 +7,11 @@ on:
         description: "Versão a publicar (ex.: 1.0.0)"
         required: true
         type: string
-      target_branch:
-        description: "Branch de origem do código"
+      target_ref:
+        description: "Commit exato ou branch de origem"
         required: true
-        default: "main"
-        type: choice
-        options:
-          - main
+        default: "b1f89a836bcf50618db965ff122709c03e2fc4ca"
+        type: string
 
 permissions:
   contents: write
@@ -26,21 +24,28 @@ jobs:
   build-and-release:
     runs-on: ubuntu-latest
     steps:
-      - name: Validar versão
+      - name: Validar versão e origem
         shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          TARGET_REF: ${{ inputs.target_ref }}
         run: |
-          if [[ ! "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Versão inválida. Use o formato X.Y.Z, por exemplo 1.0.0."
+          if [[ ! "$VERSION" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]; then
+            echo "Versão inválida. Use X.Y.Z, por exemplo 1.0.0."
+            exit 1
+          fi
+          if [[ ! "$TARGET_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "A origem deve ser um SHA completo de commit (40 caracteres)."
             exit 1
           fi
 
-      - name: Checkout do código
+      - name: Checkout do commit exato do backup1
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.target_branch }}
+          ref: ${{ inputs.target_ref }}
 
       - name: Configurar Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: "17"
           distribution: "zulu"
@@ -54,6 +59,15 @@ jobs:
       - name: Instalar dependências
         run: flutter pub get
 
+      - name: Confirmar commit compilado
+        env:
+          EXPECTED_SHA: ${{ inputs.target_ref }}
+        run: |
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "Commit solicitado: $EXPECTED_SHA"
+          echo "Commit compilado:  $ACTUAL_SHA"
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+
       - name: Compilar APK de produção
         run: flutter build apk --release
 
@@ -61,8 +75,8 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ inputs.version }}
-          name: TCG Collector v${{ inputs.version }}
-          target_commitish: ${{ inputs.target_branch }}
+          name: TCG Collector v${{ inputs.version }} (Backup 1)
+          target_commitish: ${{ inputs.target_ref }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: build/app/outputs/flutter-apk/app-release.apk
