@@ -236,6 +236,8 @@ class LimitlessTournamentDetailScreen extends StatefulWidget {
 class _LimitlessTournamentDetailScreenState
     extends State<LimitlessTournamentDetailScreen> {
   final LimitlessTcgService _service = LimitlessTcgService();
+  final TextEditingController _participantSearch = TextEditingController();
+  String _deckFilter = 'Todos os decks';
   List<LimitlessStanding> _standings = const [];
   bool _loading = true;
   String _error = '';
@@ -248,6 +250,7 @@ class _LimitlessTournamentDetailScreenState
 
   @override
   void dispose() {
+    _participantSearch.dispose();
     _service.dispose();
     super.dispose();
   }
@@ -272,6 +275,21 @@ class _LimitlessTournamentDetailScreenState
   @override
   Widget build(BuildContext context) {
     final event = widget.tournament;
+    final decks = _standings
+        .map((standing) => standing.deck.trim())
+        .where((deck) => deck.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final participantQuery = _participantSearch.text.trim().toLowerCase();
+    final visibleStandings = _standings.where((standing) {
+      final participantMatches = participantQuery.isEmpty ||
+          standing.player.toLowerCase().contains(participantQuery) ||
+          standing.country.toLowerCase().contains(participantQuery);
+      final deckMatches = _deckFilter == 'Todos os decks' ||
+          standing.deck == _deckFilter;
+      return participantMatches && deckMatches;
+    }).toList();
     return Scaffold(
       appBar: AppBar(
         title: Text(event.name, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -303,16 +321,62 @@ class _LimitlessTournamentDetailScreenState
             ),
           ),
           Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: TextField(
+              controller: _participantSearch,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: 'Filtrar participantes',
+                hintText: 'Nome do jogador ou país',
+                prefixIcon: const Icon(Icons.person_search),
+                suffixIcon: _participantSearch.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Limpar participante',
+                        onPressed: () {
+                          _participantSearch.clear();
+                          setState(() {});
+                        },
+                        icon: const Icon(Icons.clear),
+                      ),
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+            child: DropdownButtonFormField<String>(
+              value: _deckFilter,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Filtrar decks',
+                prefixIcon: Icon(Icons.style),
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: ['Todos os decks', ...decks]
+                  .map((deck) => DropdownMenuItem(
+                        value: deck,
+                        child: Text(deck, overflow: TextOverflow.ellipsis),
+                      ))
+                  .toList(),
+              onChanged: (value) => setState(() {
+                _deckFilter = value ?? 'Todos os decks';
+              }),
+            ),
+          ),
+          Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Row(
               children: [
                 Expanded(
                   child: Text(
-                    'Classificação',
+                    'Participantes',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                Text('${_standings.length} jogadores'),
+                Text('${visibleStandings.length} de ${_standings.length}'),
               ],
             ),
           ),
@@ -336,13 +400,17 @@ class _LimitlessTournamentDetailScreenState
                               textAlign: TextAlign.center,
                             ),
                           )
-                        : ListView.separated(
+                        : visibleStandings.isEmpty
+                            ? const Center(
+                                child: Text('Nenhum participante corresponde aos filtros.'),
+                              )
+                            : ListView.separated(
                             padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
-                            itemCount: _standings.length,
+                            itemCount: visibleStandings.length,
                             separatorBuilder: (_, __) =>
                                 const Divider(height: 1),
                             itemBuilder: (context, index) {
-                              final standing = _standings[index];
+                              final standing = visibleStandings[index];
                               return ListTile(
                                 dense: true,
                                 leading: CircleAvatar(
