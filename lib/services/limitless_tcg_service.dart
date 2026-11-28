@@ -208,35 +208,42 @@ class LimitlessTcgService {
     final cards = <LimitlessDeckCard>[];
     final seen = <String>{};
 
-    // Supports both legacy table rows and the current grouped card-link layout.
-    // Limitless renders current public decklists as card links inside grouped
-    // sections, not consistently as table rows. Read every card link and
-    // recover its quantity from the link or its nearest text container.
     for (final link in document.querySelectorAll('a[href*="/cards/"]')) {
       final href = link.attributes['href'] ?? '';
-      final uri = Uri.tryParse(href);
-      final path = uri?.pathSegments ?? const <String>[];
-      if (path.length < 3 || path.first != 'cards') continue;
+      final path = Uri.tryParse(href)?.pathSegments ?? const <String>[];
+      if (path.length < 3 || path[path.length - 3] != 'cards') continue;
 
-      final linkText = link.text.replaceAll(RegExp(r'\\s+'), ' ').trim();
+      final linkText = link.text.replaceAll(RegExp(r'\s+'), ' ').trim();
       var quantity = 0;
-      var name = '';
+      var name = linkText;
 
-      final linkMatch =
-          RegExp(r'^(\\d+)\\s+(.+)$').firstMatch(linkText);
-      if (linkMatch != null) {
-        quantity = int.tryParse(linkMatch.group(1) ?? '') ?? 0;
-        name = linkMatch.group(2)?.trim() ?? '';
-      } else {
-        // Some layouts place the count next to the anchor rather than inside it.
+      // Current grouped layout may include the quantity in the card link.
+      final inlineMatch = RegExp(r'^(\d+)\s+(.+)$').firstMatch(linkText);
+      if (inlineMatch != null) {
+        quantity = int.tryParse(inlineMatch.group(1) ?? '') ?? 0;
+        name = inlineMatch.group(2)?.trim() ?? '';
+      }
+
+      // Legacy public decklists keep the quantity in the first table cell.
+      if (quantity == 0) {
+        final row = link.closest('tr');
+        if (row != null) {
+          final cells = row.querySelectorAll('td');
+          if (cells.isNotEmpty) {
+            quantity = int.tryParse(cells.first.text.trim()) ?? 0;
+          }
+        }
+      }
+
+      // Some grouped layouts put the quantity in a nearby wrapper.
+      if (quantity == 0) {
         dom.Element? ancestor = link.parent;
         for (var depth = 0; ancestor != null && depth < 4; depth++) {
-          final text = ancestor.text.replaceAll(RegExp(r'\\s+'), ' ').trim();
-          final match = RegExp(r'^(\\d+)\\s+(.+)$').firstMatch(text);
+          final text = ancestor.text.replaceAll(RegExp(r'\s+'), ' ').trim();
+          final match = RegExp(r'^(\d+)\s+(.+)$').firstMatch(text);
           if (match != null) {
             quantity = int.tryParse(match.group(1) ?? '') ?? 0;
-            final remainder = match.group(2)?.trim() ?? '';
-            name = linkText.isNotEmpty ? linkText : remainder;
+            if (linkText.isEmpty) name = match.group(2)?.trim() ?? '';
             break;
           }
           ancestor = ancestor.parent;
