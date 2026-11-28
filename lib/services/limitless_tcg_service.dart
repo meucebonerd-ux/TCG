@@ -92,6 +92,7 @@ class LimitlessDeckCard {
   final String number;
   final String collectionId;
   final String collectionName;
+  final String imageUrl;
 
   const LimitlessDeckCard({
     required this.quantity,
@@ -99,6 +100,7 @@ class LimitlessDeckCard {
     required this.number,
     required this.collectionId,
     required this.collectionName,
+    this.imageUrl = '',
   });
 }
 
@@ -260,12 +262,23 @@ class LimitlessTcgService {
       final key = '$name|$number|$collectionId';
       if (!seen.add(key)) continue;
 
+      dom.Element? imageNode;
+      dom.Element? ancestor = link;
+      for (var depth = 0; ancestor != null && depth < 5; depth++) {
+        imageNode ??= ancestor.querySelector('img[data-src], img[src]');
+        if (imageNode != null) break;
+        ancestor = ancestor.parent;
+      }
+      final rawImage = imageNode?.attributes['data-src'] ?? imageNode?.attributes['src'] ?? '';
+      final imageUrl = rawImage.isEmpty ? '' : Uri.parse(_baseUrl).resolve(rawImage).toString();
+
       cards.add(LimitlessDeckCard(
         quantity: quantity,
         name: name,
         number: number,
         collectionId: collectionId,
         collectionName: '',
+        imageUrl: imageUrl,
       ));
     }
     return cards;
