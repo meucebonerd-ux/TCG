@@ -75,6 +75,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Run Flutter tests
+        run: flutter test
+
       - name: Build APK (retry on Maven rate limits)
         shell: bash
         run: |
